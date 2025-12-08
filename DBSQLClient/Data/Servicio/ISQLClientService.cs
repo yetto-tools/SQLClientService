@@ -4,9 +4,9 @@ using System.Collections.Generic;
 using System.Data;
 using System.Text;
 
-namespace Test.Data.Interfaces
+namespace DBSQLClient.Data.Servicio
 {
-    public interface IDBSqlClientService
+    public interface ISQLClientService
     {
         
         public Task<DataTable> QueryAsyncAsDataTable(
