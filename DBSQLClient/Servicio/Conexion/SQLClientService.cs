@@ -128,7 +128,7 @@ namespace DBSQLClient.Servicio.Conexion
         /// </summary>
         /// <remarks>Cada conjunto de resultados devuelto por el comando SQL se carga en una tabla de datos independiente
         /// dentro del conjunto de datos. El método abre y cierra la conexión a la base de datos automáticamente.</remarks>
-        /// <param name="sqlCommand">La consulta SQL que se va a ejecutar. No puede ser nulo ni estar vacío.
+        /// <param name="sqlCommand">La consulta SQL que se va a ejecutar. No puede ser nulo ni estar vacía.
         /// <param name="parameters">Una matriz de parámetros SQL que se aplicarán al comando, o nulo para ejecutar sin parámetros.
         /// <param name="ct">Un token de cancelación que se puede utilizar para cancelar la operación asíncrona.
         /// <param name="Timeout">El tiempo de espera del comando, en segundos. Si se establece en 0 o menos, se utiliza el tiempo de espera predeterminado de 30 segundos.</param>
@@ -374,6 +374,122 @@ namespace DBSQLClient.Servicio.Conexion
             }
 
             return (T?)mapped;
+        }
+
+        /// <summary>
+        /// Creates a fluent query operation so callers can write:
+        ///   await db.QueryAsync("select ...").AsDataTable();
+        /// </summary>
+        /// <param name="sqlCommand">SQL text to execute (required)</param>
+        /// <param name="parameters">Optional SQL parameters</param>
+        /// <param name="ct">Optional cancellation token</param>
+        /// <param name="Timeout">Optional command timeout in seconds</param>
+        /// <returns>A query operation with AsDataTable/AsDataSet/As{T} helpers.</returns>
+        public QueryOperation QueryAsync(
+            [Required] string sqlCommand,
+            SqlParameter[]? parameters = default,
+            CancellationToken ct = default,
+            int Timeout = default)
+        {
+            if (string.IsNullOrWhiteSpace(sqlCommand))
+                throw new ArgumentException("sqlCommand cannot be null or empty.", nameof(sqlCommand));
+
+            return new QueryOperation(this, sqlCommand, parameters, ct, Timeout);
+        }
+
+        /// <summary>
+        /// Helper returned by <see cref="QueryAsync(string, SqlParameter[], CancellationToken, int)"/>.
+        /// Provides async mapping methods such as AsDataTable() and AsDataSet().
+        /// </summary>
+        public sealed class QueryOperation
+        {
+            private readonly SqlClientService _service;
+            private readonly string _sql;
+            private readonly SqlParameter[]? _parameters;
+            private readonly CancellationToken _ct;
+            private readonly int _timeout;
+
+            internal QueryOperation(SqlClientService service, string sql, SqlParameter[]? parameters, CancellationToken ct, int timeout)
+            {
+                _service = service;
+                _sql = sql;
+                _parameters = parameters;
+                _ct = ct;
+                _timeout = timeout;
+            }
+
+            /// <summary>
+            /// Ejecuta la consulta y devuelve el primer DataTable como resultado.
+            /// Uso: await db.QueryAsync("select ...").AsDataTable();
+            /// </summary>
+            public Task<DataTable> AsDataTable()
+                => _service.QueryAsyncAsDataTable(_sql, _parameters, _ct, _timeout);
+
+            /// <summary>
+            /// Ejecuta la consulta y devuelve un DataSet con todos los result sets.
+            /// Uso: await db.QueryAsync("select ...").AsDataSet();
+            /// </summary>
+            public Task<DataSet> AsDataSet()
+                => _service.ExecuteAsyncAsDataSet(_sql, _parameters, _ct, _timeout);
+
+            /// <summary>
+            /// Ejecuta la consulta y mapea el resultado al tipo T.
+            /// Comportamiento igual que ExecuteStoredProcedureAsync{T} respecto a DataSet/DataTable/DataRow/scalar.
+            /// Uso: await db.QueryAsync("select ...").As{T}();
+            /// </summary>
+            public async Task<T?> As<T>()
+            {
+                object? mapped = null;
+
+                var results = await _service.ExecuteAsyncAsDataSet(_sql, _parameters, _ct, _timeout).ConfigureAwait(false);
+
+                if (typeof(T) == typeof(DataSet))
+                {
+                    mapped = results;
+                }
+                else if (typeof(T) == typeof(DataTable))
+                {
+                    mapped = results.Tables.Count > 0 ? results.Tables[0] : new DataTable();
+                }
+                else if (typeof(T) == typeof(DataRow))
+                {
+                    mapped = (results.Tables.Count > 0 && results.Tables[0].Rows.Count > 0) ? results.Tables[0].Rows[0] : null;
+                }
+                else
+                {
+                    if (results.Tables.Count > 0 && results.Tables[0].Rows.Count > 0 && results.Tables[0].Columns.Count > 0)
+                    {
+                        var val = results.Tables[0].Rows[0][0];
+                        if (val == DBNull.Value)
+                            mapped = null;
+                        else
+                        {
+                            var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+                            try
+                            {
+                                if (targetType.IsInstanceOfType(val))
+                                    mapped = val;
+                                else
+                                    mapped = Convert.ChangeType(val, targetType);
+                            }
+                            catch
+                            {
+                                try
+                                {
+                                    var json = System.Text.Json.JsonSerializer.Serialize(val);
+                                    mapped = System.Text.Json.JsonSerializer.Deserialize(json, targetType);
+                                }
+                                catch
+                                {
+                                    mapped = null;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return (T?)mapped;
+            }
         }
 
         /// <summary>

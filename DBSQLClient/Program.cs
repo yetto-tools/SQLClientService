@@ -11,12 +11,12 @@ var db = new SqlClientService("Data Source=(localdb)\\MSSQLLocalDB;Integrated Se
 
 Task.Run(async () =>
 {
-    Stopwatch stopWatch0 = new Stopwatch();
+    Stopwatch stopWatch0 = new();
     stopWatch0.Start();
     try
     {
-        var Result0 = await db.QueryAsyncAsDataTable("select @@version as Version");
-
+        var Result0 = await db.QueryAsync("select @@version as Version").AsDataSet();
+        Console.WriteLine($"{Result0.Tables.Contains("Table1")}");
     }
     catch (Exception ex)
     {
@@ -28,16 +28,29 @@ Task.Run(async () =>
     Console.WriteLine($"<QueryAsyncAsDataTable> Tiempo ms: {ts0.TotalMilliseconds}");
 }).Wait();
 
+Task.Run(async () =>
+{
+    Stopwatch stopWatch4 = new();
+    stopWatch4.Start();
+    try
+    {
+        var Result0 = await db.ExecuteAsyncAsDataSet("dbo.USP_TEST");
 
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error: {ex.Message}");
+    }
 
-
-
-
+    stopWatch4.Stop();
+    TimeSpan ts0 = stopWatch4.Elapsed;
+    Console.WriteLine($"<ExecuteAsyncAsDataSet> Tiempo ms: {ts0.TotalMilliseconds}");
+}).Wait();
 
 
 Task.Run(async () =>
 {
-    Stopwatch stopWatch1 = new Stopwatch();
+    Stopwatch stopWatch1 = new();
     stopWatch1.Start();
 
     var Result1 = await db.ExecuteStoredProcedureAsync<object>("dbo.USP_TEST");
@@ -46,6 +59,8 @@ Task.Run(async () =>
     TimeSpan ts1 = stopWatch1.Elapsed;
     Console.WriteLine($"<ExecuteStoredProcedureAsync> Tiempo ms: {ts1.TotalMilliseconds}");
 }).Wait();
+
+
 
 
 Console.WriteLine("fin");
