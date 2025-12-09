@@ -1,6 +1,7 @@
 using Microsoft.Data.SqlClient;
 using System.ComponentModel.DataAnnotations;
 using System.Data;
+using System.Diagnostics;
 using System.Reflection.PortableExecutable;
 
 namespace DBSQLClient.Servicio.Conexion
@@ -18,7 +19,7 @@ namespace DBSQLClient.Servicio.Conexion
     {
 
         private readonly string _connectionString;
-        private SqlConnection? _connection;
+        
 
         /// <summary>
         /// Inicializa una nueva instancia de la clase DBSqlClientService utilizando la cadena de conexión especificada.
@@ -39,8 +40,6 @@ namespace DBSQLClient.Servicio.Conexion
             {
                 throw new ArgumentException("La cadena de conexión no puede estar vacía.", nameof(connectionString), ex);
             }
-
-
         }
 
 
@@ -52,18 +51,18 @@ namespace DBSQLClient.Servicio.Conexion
         /// al utilizar la conexión devuelta.</remarks>
         /// <returns>Una instancia <see cref="SqlConnection"/> que está abierta y lista para comandos de base de datos.</returns>
         /// <exception cref="InvalidOperationException">Se lanza cuando se produce un error al abrir la conexión SQL.</exception>
-        private async Task<SqlConnection> GetConn()
+        private SqlConnection GetConnection()
         {
 
-            // Si la conexión no está inicializada o está cerrada, crea una nueva conexión.
-            if (_connection == null)
-                _connection = new SqlConnection(_connectionString);
-
-            // Si la conexión está cerrada, intenta abrirla.
-            if (_connection.State != ConnectionState.Open)
-                await _connection.OpenAsync();
-            // Devuelve la conexión abierta.
-            return _connection;
+            try
+            {
+                return new SqlConnection(_connectionString);           
+            }
+            catch (SqlException ex)
+            {
+                // Si ocurre un error al abrir la conexión, lanza una excepción con el mensaje de error.
+                throw new InvalidOperationException($"Error al abrir la conexión SQL: {ex.Message}", ex);
+            } 
 
         }
 
@@ -89,28 +88,32 @@ namespace DBSQLClient.Servicio.Conexion
             try
             {
                 // Obtiene una conexión abierta a la base de datos SQL.
-                var conn = await GetConn();
-                // Asegura que la conexión esté abierta antes de ejecutar el comando
-                await using var cmd = new SqlCommand(sqlCommand, conn)
+                using (var conn = GetConnection())
                 {
-                    CommandType = CommandType.Text,
-                    CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
-                };
+                    await conn.OpenAsync(ct);
+                    // Asegura que la conexión esté abierta antes de ejecutar el comando
+                    await using var cmd = new SqlCommand(sqlCommand, conn)
+                    {
+                        CommandType = CommandType.Text,
+                        CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
+                    };
 
-                // Si se proporcionan parámetros, agréguelos al comando
-                if (parameters != default)
-                    cmd.Parameters.AddRange(parameters);
-                // Ejecuta el comando de forma asíncrona y llena un DataTable con los resultados
-                using var reader = await cmd.ExecuteReaderAsync();
+                    // Si se proporcionan parámetros, agréguelos al comando
+                    if (parameters != default)
+                        cmd.Parameters.AddRange(parameters);
+                    // Ejecuta el comando de forma asíncrona y llena un DataTable con los resultados
+                    using var reader = await cmd.ExecuteReaderAsync();
 
-                // Lee los resultados del comando SQL y los carga en el DataTable.
-                while (!reader.IsClosed)
-                    dtResultSet.Load(reader);
+                    // Lee los resultados del comando SQL y los carga en el DataTable.
+                    while (!reader.IsClosed)
+                        dtResultSet.Load(reader);
+                }
+                
             }
             catch (SqlException ex)
             {
                 // Si ocurre un error SQL, lanza una excepción con el mensaje de error
-                throw new InvalidOperationException($"Error SQL: {ex.Message}", ex);
+                throw new InvalidOperationException($"Error SQL >> {ex.Message} ", ex);
             }
 
             // Devuelve el DataTable con los resultados de la consulta SQL
@@ -140,22 +143,27 @@ namespace DBSQLClient.Servicio.Conexion
             try
             {
                 // Obtiene una conexión abierta a la base de datos SQL.
-                var conn = await GetConn();
-                // Asegura que la conexión esté abierta antes de ejecutar el comando
-                await using var cmd = new SqlCommand(sqlCommand, conn)
+                using (var conn = GetConnection())
                 {
-                    CommandType = CommandType.Text,
-                    CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
-                };
-                // Si se proporcionan parámetros, agréguelos al comando
-                if (parameters != default)
-                    cmd.Parameters.AddRange(parameters);
+                    // Asegura que la conexión esté abierta antes de ejecutar el comando
+                    await conn.OpenAsync(ct);
 
-                // Ejecuta el comando de forma asíncrona y llena un DataSet con los resultados
-                using var reader = await cmd.ExecuteReaderAsync(ct);
-                // Lee los resultados del comando SQL y los carga en el DataSet.
-                while (!reader.IsClosed)
-                    dsResultSet.Tables.Add().Load(reader);
+                    await using var cmd = new SqlCommand(sqlCommand, conn)
+                    {
+                        CommandType = CommandType.Text,
+                        CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
+                    };
+                    // Si se proporcionan parámetros, agréguelos al comando
+                    if (parameters != default)
+                        cmd.Parameters.AddRange(parameters);
+
+                    // Ejecuta el comando de forma asíncrona y llena un DataSet con los resultados
+                    using var reader = await cmd.ExecuteReaderAsync(ct);
+                    // Lee los resultados del comando SQL y los carga en el DataSet.
+                    while (!reader.IsClosed)
+                        dsResultSet.Tables.Add().Load(reader);
+                }
+                
 
             }
             catch (SqlException ex)
@@ -187,24 +195,31 @@ namespace DBSQLClient.Servicio.Conexion
             try
             {
                 // Verifica que el nombre del procedimiento almacenado no sea nulo ni esté vacío.
-                var conn = await GetConn();
-
-                // Asegura que la conexión esté abierta antes de ejecutar el comando
-                await using var cmd = new SqlCommand(nameStoredProcedure, conn)
+                using (var conn = GetConnection())
                 {
-                    CommandType = CommandType.StoredProcedure,
-                    CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
-                };
+                    // Asegura que la conexión esté abierta antes de ejecutar el comando
+                    await conn.OpenAsync(ct);
 
-                // Si se proporcionan parámetros, agréguelos al comando
-                if (parameters != default)
-                    cmd.Parameters.AddRange(parameters);
+                    await using var cmd = new SqlCommand(nameStoredProcedure, conn)
+                    {
+                        CommandType = CommandType.StoredProcedure,
+                        CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
+                    };
 
-                // Crea un DataSet para almacenar los resultados del procedimiento almacenado.
-                using var reader = await cmd.ExecuteReaderAsync(ct);
-                // Lee los resultados del procedimiento almacenado y los carga en el DataSet.
-                while (!reader.IsClosed)
-                    results.Tables.Add().Load(reader);
+                    // Si se proporcionan parámetros, agréguelos al comando
+                    if (parameters != default)
+                        cmd.Parameters.AddRange(parameters);
+
+                    // Crea un DataSet para almacenar los resultados del procedimiento almacenado.
+                    using (var reader = await cmd.ExecuteReaderAsync(ct)) 
+                    {
+                        // Lee los resultados del procedimiento almacenado y los carga en el DataSet.
+                        while (!reader.IsClosed)
+                            results.Tables.Add().Load(reader);
+                    }
+
+                }
+
 
 
             }
@@ -245,107 +260,111 @@ namespace DBSQLClient.Servicio.Conexion
             try
             {
 
-                var conn = await GetConn();
-                await using var cmd = new SqlCommand(nameStoredProcedure, conn)
+                using (var conn = GetConnection())
                 {
-                    CommandType = CommandType.StoredProcedure,
-                    CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
-                };
-
-                if (parameters != default)
-                    cmd.Parameters.AddRange(parameters);
-
-                var results = new DataSet();
-
-                // Use an async reader and populate one DataTable per result set.
-                await using var reader = await cmd.ExecuteReaderAsync(ct);
-
-                do
-                {
-                    if (reader.FieldCount > 0)
+                    await conn.OpenAsync(ct);
+                    await using var cmd = new SqlCommand(nameStoredProcedure, conn)
                     {
-                        var dataTable = new DataTable();
+                        CommandType = CommandType.StoredProcedure,
+                        CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
+                    };
 
-                        // Crear Columnas desde el esquema del Reader (Asegurar que sea nombre unico por columnas )
-                        for (int i = 0; i < reader.FieldCount; i++)
-                        {
-                            Type colType;
-                            try
-                            {
-                                colType = reader.GetFieldType(i);
-                            }
-                            catch
-                            {
-                                colType = typeof(object);
-                            }
+                    if (parameters != default)
+                        cmd.Parameters.AddRange(parameters);
 
-                            var rawName = reader.GetName(i);
-                            var baseName = string.IsNullOrEmpty(rawName) ? $"Column{i}" : rawName;
-                            var uniqueName = GetUniqueColumnName(dataTable, baseName);
+                    var results = new DataSet();
 
-                            dataTable.Columns.Add(new DataColumn(uniqueName, colType));
-                        }
+                    // Use an async reader and populate one DataTable per result set.
+                    await using var reader = await cmd.ExecuteReaderAsync(ct);
 
-                        // leer filasa de forma asincrona y añador a las tablas
-                        var values = new object[reader.FieldCount];
-                        while (await reader.ReadAsync(ct))
-                        {
-                            reader.GetValues(values);
-                            var rowValues = new object[values.Length];
-                            Array.Copy(values, rowValues, values.Length);
-                            dataTable.Rows.Add(rowValues);
-                        }
-
-                        results.Tables.Add(dataTable);
-                    }
-                } while (await reader.NextResultAsync(ct));
-
-
-                if (typeof(T) == typeof(DataSet))
-                {
-                    mapped = results;
-                }
-                else if (typeof(T) == typeof(DataTable))
-                {
-                    mapped = results.Tables.Count > 0 ? results.Tables[0] : new DataTable();
-                }
-                else if (typeof(T) == typeof(DataRow))
-                {
-                    mapped = (results.Tables.Count > 0 && results.Tables[0].Rows.Count > 0) ? results.Tables[0].Rows[0] : null;
-                }
-                else
-                {
-                    // si es un tipo scalaer el generico entoces se toma primer valor de la tabla y primera fila 
-                    if (results.Tables.Count > 0 && results.Tables[0].Rows.Count > 0 && results.Tables[0].Columns.Count > 0)
+                    do
                     {
-                        var val = results.Tables[0].Rows[0][0];
-                        if (val == DBNull.Value)
-                            mapped = null;
-                        else
+                        if (reader.FieldCount > 0)
                         {
-                            var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
-                            try
+                            var dataTable = new DataTable();
+
+                            // Crear Columnas desde el esquema del Reader (Asegurar que sea nombre unico por columnas )
+                            for (int i = 0; i < reader.FieldCount; i++)
                             {
-                                if (targetType.IsInstanceOfType(val))
-                                    mapped = val;
-                                else
-                                    mapped = Convert.ChangeType(val, targetType);
-                            }
-                            catch
-                            {
-                                //  intentar cambiar mediante la serialización System.Text.Json para tipos complejo
+                                Type colType;
                                 try
                                 {
-                                    var json = System.Text.Json.JsonSerializer.Serialize(val);
-                                    mapped = System.Text.Json.JsonSerializer.Deserialize(json, targetType);
+                                    colType = reader.GetFieldType(i);
                                 }
                                 catch
                                 {
-                                    mapped = null;
+                                    colType = typeof(object);
+                                }
+
+                                var rawName = reader.GetName(i);
+                                var baseName = string.IsNullOrEmpty(rawName) ? $"Column{i}" : rawName;
+                                var uniqueName = GetUniqueColumnName(dataTable, baseName);
+
+                                dataTable.Columns.Add(new DataColumn(uniqueName, colType));
+                            }
+
+                            // leer filasa de forma asincrona y añador a las tablas
+                            var values = new object[reader.FieldCount];
+                            while (await reader.ReadAsync(ct))
+                            {
+                                reader.GetValues(values);
+                                var rowValues = new object[values.Length];
+                                Array.Copy(values, rowValues, values.Length);
+                                dataTable.Rows.Add(rowValues);
+                            }
+
+                            results.Tables.Add(dataTable);
+                        }
+                    } while (await reader.NextResultAsync(ct));
+
+
+                    if (typeof(T) == typeof(DataSet))
+                    {
+                        mapped = results;
+                    }
+                    else if (typeof(T) == typeof(DataTable))
+                    {
+                        mapped = results.Tables.Count > 0 ? results.Tables[0] : new DataTable();
+                    }
+                    else if (typeof(T) == typeof(DataRow))
+                    {
+                        mapped = (results.Tables.Count > 0 && results.Tables[0].Rows.Count > 0) ? results.Tables[0].Rows[0] : null;
+                    }
+                    else
+                    {
+                        // si es un tipo scalaer el generico entoces se toma primer valor de la tabla y primera fila 
+                        if (results.Tables.Count > 0 && results.Tables[0].Rows.Count > 0 && results.Tables[0].Columns.Count > 0)
+                        {
+                            var val = results.Tables[0].Rows[0][0];
+                            if (val == DBNull.Value)
+                                mapped = null;
+                            else
+                            {
+                                var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+                                try
+                                {
+                                    if (targetType.IsInstanceOfType(val))
+                                        mapped = val;
+                                    else
+                                        mapped = Convert.ChangeType(val, targetType);
+                                }
+                                catch
+                                {
+                                    //  intentar cambiar mediante la serialización System.Text.Json para tipos complejo
+                                    try
+                                    {
+                                        var json = System.Text.Json.JsonSerializer.Serialize(val);
+                                        mapped = System.Text.Json.JsonSerializer.Deserialize(json, targetType);
+                                    }
+                                    catch
+                                    {
+                                        mapped = null;
+                                    }
                                 }
                             }
                         }
                     }
+
                 }
 
             }
