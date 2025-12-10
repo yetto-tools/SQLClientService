@@ -1,519 +1,404 @@
-using Microsoft.Data.SqlClient;
+using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Data;
-using System.Diagnostics;
-using System.Reflection.PortableExecutable;
+using System.Data.SqlClient;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
+
 
 namespace DBSQLClient.Servicio.Conexion
 {
-    /// <resumen>
+    #region Clases de Soporte
+
+    /// <summary>
+    /// Representa un parámetro SQL con nombre, valor y tipo de datos.
+    /// </summary>
+    public class SqlParameters
+    {
+        public string Name { get; set; }
+        public object? Value { get; set; }
+        public SqlDbType? DbType { get; set; }
+        public ParameterDirection Direction { get; set; } = ParameterDirection.Input;
+        public int? Size { get; set; }
+
+        public SqlParameters(string name, object? value)
+        {
+            Name = name;
+            Value = value;
+        }
+
+        public SqlParameters(string name, object? value, SqlDbType dbType)
+        {
+            Name = name;
+            Value = value;
+            DbType = dbType;
+        }
+
+        public SqlParameters(string name, object? value, SqlDbType dbType, ParameterDirection direction)
+        {
+            Name = name;
+            Value = value;
+            DbType = dbType;
+            Direction = direction;
+        }
+
+        public SqlParameters(string name, object? value, SqlDbType dbType, int size)
+        {
+            Name = name;
+            Value = value;
+            DbType = dbType;
+            Size = size;
+        }
+    }
+
+    /// <summary>
+    /// Resultado de una consulta SQL que proporciona múltiples formatos de salida.
+    /// </summary>
+    public class SqlQueryResult
+    {
+        private readonly DataSet _dataSet;
+
+        internal SqlQueryResult(DataSet dataSet)
+        {
+            _dataSet = dataSet ?? new DataSet();
+        }
+
+        /// <summary>
+        /// Devuelve el resultado como DataSet completo.
+        /// </summary>
+        public DataSet AsDataSet() => _dataSet;
+
+        /// <summary>
+        /// Devuelve la primera tabla del resultado como DataTable.
+        /// </summary>
+        public DataTable AsDataTable()
+        {
+            return _dataSet.Tables.Count > 0 ? _dataSet.Tables[0] : new DataTable();
+        }
+
+        /// <summary>
+        /// Devuelve una tabla de datos (DataTable) del conjunto de datos subyacente (DataSet) en el índice especificado, o la primera tabla si no se ha especificado ningún índice.
+        /// provided.
+        /// </summary>
+        /// <remarks>Si el conjunto de datos no contiene tablas o el índice especificado está fuera de rango, se devuelve una tabla de datos vacía
+        /// en lugar de lanzar una excepción.</remarks>
+        /// <param name="IndexTable">El índice base cero de la tabla que se va a recuperar del conjunto de datos. Si es nulo o menor o igual que cero,
+        /// se devuelve la primera tabla.</param>
+        /// <returns>Una tabla de datos en el índice especificado, si existe; de lo contrario, una tabla de datos vacía.</returns>
+        public DataTable AsDataTable(int? IndexTable = 0)
+        {
+            if(IndexTable.HasValue && IndexTable > 0)
+            {
+                return _dataSet.Tables.Count > IndexTable.Value ? _dataSet.Tables[IndexTable.Value] : new DataTable();
+            }
+
+            return _dataSet.Tables.Count > 0 ? _dataSet.Tables[0] : new DataTable();
+        }
+
+        
+        /// <summary>
+        /// Devuelve las columnas de la primera tabla.
+        /// </summary>
+        public DataColumnCollection AsDataColumns()
+        {
+            return AsDataTable().Columns;
+        }
+
+     
+
+        /// <summary>
+        /// Devuelve las filas de la primera tabla.
+        /// </summary>
+        public DataRowCollection AsDataRows()
+        {
+            return AsDataTable().Rows;
+        }
+
+        /// <summary>
+        /// Devuelve el resultado como una colección enumerable de DataRow.
+        /// </summary>
+        public IEnumerable<DataRow> AsEnumerable()
+        {
+            return AsDataTable().AsEnumerable();
+        }
+
+        /// <summary>
+        /// Convierte el resultado a una lista de objetos del tipo especificado.
+        /// </summary>
+        public List<T> ToList<T>() where T : new()
+        {
+            var table = AsDataTable();
+            var list = new List<T>();
+            var properties = typeof(T).GetProperties();
+
+            foreach (DataRow row in table.Rows)
+            {
+                var obj = new T();
+                foreach (var prop in properties)
+                {
+                    if (table.Columns.Contains(prop.Name) && row[prop.Name] != DBNull.Value)
+                    {
+                        prop.SetValue(obj, Convert.ChangeType(row[prop.Name], prop.PropertyType));
+                    }
+                }
+                list.Add(obj);
+            }
+
+            return list;
+        }
+
+        /// <summary>
+        /// Devuelve el primer objeto del tipo especificado o null si no hay resultados.
+        /// </summary>
+        public T? FirstOrDefault<T>() where T : new()
+        {
+            return ToList<T>().FirstOrDefault();
+        }
+
+        /// <summary>
+        /// Devuelve el número de filas afectadas.
+        /// </summary>
+        public int RowCount => AsDataTable().Rows.Count;
+
+        /// <summary>
+        /// Indica si el resultado tiene filas.
+        /// </summary>
+        public bool HasRows => RowCount > 0;
+    }
+
+    #endregion
+
+    #region Implementación del Servicio
+
+    /// <summary>
     /// Proporciona métodos para ejecutar consultas SQL y procedimientos almacenados de forma asíncrona en una base de datos SQL Server,
     /// devolviendo los resultados como DataTable, DataSet u objetos mapeados.
-    /// </resumen>
-    /// <observaciones>Este servicio gestiona las conexiones SQL Server y admite consultas parametrizadas, tiempos de espera de comandos
-    /// y tokens de cancelación para operaciones asíncronas. Está pensado para situaciones en las que se requiere un acceso directo y
-    /// de bajo nivel a SQL Server, como la ejecución de consultas ad hoc o procedimientos almacenados y la recuperación de
-    /// resultados en varios formatos. El servicio no gestiona el agrupamiento de conexiones más allá de lo que proporciona ADO.NET.
-    /// No se garantiza la seguridad de los subprocesos; cree una instancia independiente por cada operación simultánea si es necesario.</remarks>
+    /// </summary>
     public class SqlClientService : ISQLClientService
     {
-
         private readonly string _connectionString;
-        
+        private const int DefaultTimeout = 600; // Timeout por defecto en segundos
 
         /// <summary>
-        /// Inicializa una nueva instancia de la clase DBSqlClientService utilizando la cadena de conexión especificada.
+        /// Inicializa una nueva instancia de la clase SqlClientService utilizando la cadena de conexión especificada.
         /// </summary>
-        /// <param name="connectionString">La cadena de conexión utilizada para establecer una conexión con la base de datos. No puede ser nula ni estar vacía.</param>
+        /// <param name="connectionString">La cadena de conexión utilizada para establecer una conexión con la base de datos.</param>
         public SqlClientService(string connectionString)
         {
-            try
-            {
-                // Verifica que la cadena de conexión no sea nula ni esté vacía.
-                _connectionString = connectionString;
-            }
-            catch (ArgumentNullException ex)
-            {
-                throw new ArgumentNullException($"La cadena de conexión no puede ser nula. {nameof(connectionString)}", ex);
-            }
-            catch (ArgumentException ex)
-            {
-                throw new ArgumentException("La cadena de conexión no puede estar vacía.", nameof(connectionString), ex);
-            }
+            if (string.IsNullOrWhiteSpace(connectionString))
+                throw new ArgumentException("La cadena de conexión no puede ser nula ni estar vacía.", nameof(connectionString));
+
+            _connectionString = connectionString;
         }
 
-
         /// <summary>
-        /// Obtiene de forma asíncrona una conexión abierta a la base de datos SQL para su uso en operaciones con la base de datos.
+        /// Obtiene una nueva conexión a la base de datos SQL.
         /// </summary>
-        /// <remarks>Si ya se ha establecido una conexión y está abierta, se devuelve la misma instancia.
-        /// De lo contrario, se crea y se abre una nueva conexión. El autor de la llamada es responsable de garantizar la seguridad del subproceso
-        /// al utilizar la conexión devuelta.</remarks>
-        /// <returns>Una instancia <see cref="SqlConnection"/> que está abierta y lista para comandos de base de datos.</returns>
-        /// <exception cref="InvalidOperationException">Se lanza cuando se produce un error al abrir la conexión SQL.</exception>
         private SqlConnection GetConnection()
         {
-
             try
             {
-                return new SqlConnection(_connectionString);           
+                return new SqlConnection(_connectionString);
             }
             catch (SqlException ex)
             {
-                // Si ocurre un error al abrir la conexión, lanza una excepción con el mensaje de error.
-                throw new InvalidOperationException($"Error al abrir la conexión SQL: {ex.Message}", ex);
-            } 
+                throw new InvalidOperationException($"Error al crear la conexión SQL: {ex.Message}", ex);
+            }
+        }
 
+        #region Métodos QueryAsync
+
+        /// <summary>
+        /// Ejecuta una consulta SQL de forma asíncrona.
+        /// </summary>
+        public Task<SqlQueryResult> QueryAsync(string query)
+        {
+            return QueryAsync(query, null, null, DefaultTimeout);
         }
 
         /// <summary>
-        /// Ejecuta la consulta SQL especificada de forma asíncrona y devuelve los resultados como una tabla de datos (DataTable).
+        /// Ejecuta una consulta SQL con parámetros de forma asíncrona.
         /// </summary>
-        /// <param name="sqlCommand">La consulta SQL que se va a ejecutar. No puede ser nula ni estar vacía.</param>
-        /// <param name="parameters">Una Array de objetos SqlParameter que se aplicarán a la consulta SQL, o nula si no se requieren parámetros.</param>
-        /// <param name="ct">Un CancellationToken que se puede utilizar para cancelar la operación asíncrona.</param>
-        /// <param name="Timeout">El tiempo de espera del comando, en segundos. Si se establece en 0, se utiliza el tiempo de espera predeterminado.</param>
-        /// <returns>Una tabla de datos que contiene los resultados de la consulta SQL. La tabla de datos estará vacía si la consulta no devuelve ninguna
-        /// fila.</returns>
-        /// <exception cref="InvalidOperationException">Se lanza si se produce un error al ejecutar la consulta SQL.</exception>
-        public async Task<DataTable> QueryAsyncAsDataTable(
-            [Required] string sqlCommand,
-            SqlParameter[]? parameters = default,
-            CancellationToken ct = default,
-            int Timeout = default)
+        public Task<SqlQueryResult> QueryAsync(string query, SqlParameters[]? parameters)
         {
-            // Almacener la informacion que se recupere en un DataTable.
-            using var dtResultSet = new DataTable();
+            return QueryAsync(query, parameters, null, DefaultTimeout);
+        }
+
+        /// <summary>
+        /// Ejecuta una consulta SQL con parámetros y token de cancelación de forma asíncrona.
+        /// </summary>
+        public Task<SqlQueryResult> QueryAsync(string query, SqlParameters[]? parameters, CancellationToken? cancellationToken)
+        {
+            return QueryAsync(query, parameters, cancellationToken, DefaultTimeout);
+        }
+
+        /// <summary>
+        /// Ejecuta una consulta SQL con parámetros y timeout personalizado de forma asíncrona.
+        /// </summary>
+        public Task<SqlQueryResult> QueryAsync(string query, SqlParameters[]? parameters, int? timeout)
+        {
+            return QueryAsync(query, parameters, null, timeout ?? DefaultTimeout);
+        }
+
+        /// <summary>
+        /// Método privado que ejecuta una consulta SQL con todos los parámetros opcionales.
+        /// </summary>
+        private async Task<SqlQueryResult> QueryAsync(
+            string query,
+            SqlParameters[]? parameters,
+            CancellationToken? cancellationToken,
+            int timeout)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+                throw new ArgumentException("La consulta no puede ser nula ni estar vacía.", nameof(query));
+
+            var token = cancellationToken ?? CancellationToken.None;
 
             try
             {
-                // Obtiene una conexión abierta a la base de datos SQL.
-                using (var conn = GetConnection())
+                using var connection = GetConnection();
+                await connection.OpenAsync(token);
+
+                using var command = new SqlCommand(query, connection)
                 {
-                    await conn.OpenAsync(ct);
-                    // Asegura que la conexión esté abierta antes de ejecutar el comando
-                    await using var cmd = new SqlCommand(sqlCommand, conn)
-                    {
-                        CommandType = CommandType.Text,
-                        CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
-                    };
+                    CommandType = CommandType.Text,
+                    CommandTimeout = timeout
+                };
 
-                    // Si se proporcionan parámetros, agréguelos al comando
-                    if (parameters != default)
-                        cmd.Parameters.AddRange(parameters);
-                    // Ejecuta el comando de forma asíncrona y llena un DataTable con los resultados
-                    using var reader = await cmd.ExecuteReaderAsync();
+                AddParameters(command, parameters);
 
-                    // Lee los resultados del comando SQL y los carga en el DataTable.
-                    while (!reader.IsClosed)
-                        dtResultSet.Load(reader);
-                }
-                
+                using var adapter = new SqlDataAdapter(command);
+                var dataSet = new DataSet();
+
+                // SqlDataAdapter.Fill no tiene versión async nativa, pero se ejecuta en un contexto no bloqueante
+                await Task.Run(() => adapter.Fill(dataSet), token);
+
+                return new SqlQueryResult(dataSet);
             }
             catch (SqlException ex)
             {
-                // Si ocurre un error SQL, lanza una excepción con el mensaje de error
-                throw new InvalidOperationException($"Error SQL >> {ex.Message} ", ex);
+                throw new InvalidOperationException($"Error al ejecutar la consulta SQL: {ex.Message}", ex);
             }
-
-            // Devuelve el DataTable con los resultados de la consulta SQL
-            return dtResultSet;
+            catch (OperationCanceledException)
+            {
+                throw new OperationCanceledException("La operación de consulta fue cancelada.");
+            }
         }
 
+        #endregion
 
-
+        #region Métodos ExecuteAsync
 
         /// <summary>
-        /// Ejecuta el comando SQL especificado de forma asíncrona y devuelve los resultados como un DataSet.
+        /// Ejecuta un procedimiento almacenado de forma asíncrona.
         /// </summary>
-        /// <remarks>Cada conjunto de resultados devuelto por el comando SQL se carga en una tabla de datos independiente
-        /// dentro del conjunto de datos. El método abre y cierra la conexión a la base de datos automáticamente.</remarks>
-        /// <param name="sqlCommand">La consulta SQL que se va a ejecutar. No puede ser nulo ni estar vacía.
-        /// <param name="parameters">Una matriz de parámetros SQL que se aplicarán al comando, o nulo para ejecutar sin parámetros.
-        /// <param name="ct">Un token de cancelación que se puede utilizar para cancelar la operación asíncrona.
-        /// <param name="Timeout">El tiempo de espera del comando, en segundos. Si se establece en 0 o menos, se utiliza el tiempo de espera predeterminado de 30 segundos.</param>
-        /// <returns>Un conjunto de datos que contiene los conjuntos de resultados devueltos por el comando SQL. El conjunto de datos estará vacío si la consulta
-        /// no devuelve ningún resultado.</returns>
-        /// <exception cref="InvalidOperationException">Se lanza si se produce un error al ejecutar el comando SQL.</exception>
-        public async Task<DataSet> ExecuteAsyncAsDataSet(
-            [Required] string sqlCommand, SqlParameter[]? parameters = default, CancellationToken ct = default, int Timeout = default)
+        public Task<SqlQueryResult> ExecuteAsync(string storeProcedureName)
         {
-            // Para Almacenar los resultados de la consulta SQL en un DataSet.
-            using var dsResultSet = new DataSet();
+            return ExecuteAsync(storeProcedureName, Array.Empty<SqlParameters>(), CancellationToken.None, DefaultTimeout);
+        }
+
+        /// <summary>
+        /// Ejecuta un procedimiento almacenado con parámetros de forma asíncrona.
+        /// </summary>
+        public Task<SqlQueryResult> ExecuteAsync(string storeProcedureName, SqlParameters[] parameters)
+        {
+            return ExecuteAsync(storeProcedureName, parameters, CancellationToken.None, DefaultTimeout);
+        }
+
+        /// <summary>
+        /// Ejecuta un procedimiento almacenado con parámetros y token de cancelación de forma asíncrona.
+        /// </summary>
+        public Task<SqlQueryResult> ExecuteAsync(string storeProcedureName, SqlParameters[] parameters, CancellationToken cancellationToken)
+        {
+            return ExecuteAsync(storeProcedureName, parameters, cancellationToken, DefaultTimeout);
+        }
+
+        /// <summary>
+        /// Ejecuta un procedimiento almacenado con parámetros y timeout personalizado de forma asíncrona.
+        /// </summary>
+        public Task<SqlQueryResult> ExecuteAsync(string storeProcedureName, SqlParameters[] parameters, int timeout)
+        {
+            return ExecuteAsync(storeProcedureName, parameters, CancellationToken.None, timeout);
+        }
+
+        /// <summary>
+        /// Método privado que ejecuta un procedimiento almacenado con todos los parámetros opcionales.
+        /// </summary>
+        private async Task<SqlQueryResult> ExecuteAsync(
+            string storeProcedureName,
+            SqlParameters[] parameters,
+            CancellationToken cancellationToken,
+            int timeout)
+        {
+            if (string.IsNullOrWhiteSpace(storeProcedureName))
+                throw new ArgumentException("El nombre del procedimiento almacenado no puede ser nulo ni estar vacío.", nameof(storeProcedureName));
+
             try
             {
-                // Obtiene una conexión abierta a la base de datos SQL.
-                using (var conn = GetConnection())
+                using var connection = GetConnection();
+                await connection.OpenAsync(cancellationToken);
+
+                using var command = new SqlCommand(storeProcedureName, connection)
                 {
-                    // Asegura que la conexión esté abierta antes de ejecutar el comando
-                    await conn.OpenAsync(ct);
+                    CommandType = CommandType.StoredProcedure,
+                    CommandTimeout = timeout
+                };
 
-                    await using var cmd = new SqlCommand(sqlCommand, conn)
-                    {
-                        CommandType = CommandType.Text,
-                        CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
-                    };
-                    // Si se proporcionan parámetros, agréguelos al comando
-                    if (parameters != default)
-                        cmd.Parameters.AddRange(parameters);
+                AddParameters(command, parameters);
 
-                    // Ejecuta el comando de forma asíncrona y llena un DataSet con los resultados
-                    using var reader = await cmd.ExecuteReaderAsync(ct);
-                    // Lee los resultados del comando SQL y los carga en el DataSet.
-                    while (!reader.IsClosed)
-                        dsResultSet.Tables.Add().Load(reader);
-                }
-                
+                using var adapter = new SqlDataAdapter(command);
+                var dataSet = new DataSet();
 
+                await Task.Run(() => adapter.Fill(dataSet), cancellationToken);
+
+                return new SqlQueryResult(dataSet);
             }
             catch (SqlException ex)
             {
-                // Si ocurre un error SQL, lanza una excepción con el mensaje de error
-                throw new InvalidOperationException($"Error SQL: {ex.Message}", ex);
+                throw new InvalidOperationException($"Error al ejecutar el procedimiento almacenado '{storeProcedureName}': {ex.Message}", ex);
             }
-            return dsResultSet;
+            catch (OperationCanceledException)
+            {
+                throw new OperationCanceledException($"La ejecución del procedimiento almacenado '{storeProcedureName}' fue cancelada.");
+            }
         }
 
+        #endregion
+
+        #region Métodos Auxiliares
 
         /// <summary>
-        /// Ejecuta de forma asíncrona un procedimiento almacenado y devuelve los resultados como un conjunto de datos (DataSet).
+        /// Agrega parámetros a un comando SQL.
         /// </summary>
-        /// <param name="nameStoredProcedure">El nombre del procedimiento almacenado que se va a ejecutar. No puede ser nulo ni estar vacío.</param>
-        /// <param name="parameters">Una Array de objetos SqlParameter que se pasarán al procedimiento almacenado, o nulo para ejecutar sin parámetros.</param>
-        /// <param name="ct">Un CancellationToken que se puede utilizar para cancelar la operación asíncrona.</param>
-        /// <param name="Timeout">El tiempo de espera del comando, en segundos. Si se establece en 0, se utiliza el tiempo de espera predeterminado.</param>
-        /// <returns>Un DataSet que contiene los conjuntos de resultados devueltos por el procedimiento almacenado. El DataSet estará vacío si el
-        /// procedimiento almacenado no devuelve ningún resultado.</returns>
-        public async Task<DataSet> ExecuteStoredProcedureAsync(
-            string nameStoredProcedure,
-            SqlParameter[]? parameters = default,
-            CancellationToken ct = default,
-            int Timeout = default)
+        private void AddParameters(SqlCommand command, SqlParameters[]? parameters)
         {
-            //
-            using var results = new DataSet();
-            try
+            if (parameters == null || parameters.Length == 0)
+                return;
+
+            foreach (var param in parameters)
             {
-                // Verifica que el nombre del procedimiento almacenado no sea nulo ni esté vacío.
-                using (var conn = GetConnection())
+                var sqlParam = new SqlParameter
                 {
-                    // Asegura que la conexión esté abierta antes de ejecutar el comando
-                    await conn.OpenAsync(ct);
+                    ParameterName = param.Name.StartsWith("@") ? param.Name : $"@{param.Name}",
+                    Value = param.Value ?? DBNull.Value,
+                    Direction = param.Direction
+                };
 
-                    await using var cmd = new SqlCommand(nameStoredProcedure, conn)
-                    {
-                        CommandType = CommandType.StoredProcedure,
-                        CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
-                    };
+                if (param.DbType.HasValue)
+                    sqlParam.SqlDbType = param.DbType.Value;
 
-                    // Si se proporcionan parámetros, agréguelos al comando
-                    if (parameters != default)
-                        cmd.Parameters.AddRange(parameters);
+                if (param.Size.HasValue)
+                    sqlParam.Size = param.Size.Value;
 
-                    // Crea un DataSet para almacenar los resultados del procedimiento almacenado.
-                    using (var reader = await cmd.ExecuteReaderAsync(ct)) 
-                    {
-                        // Lee los resultados del procedimiento almacenado y los carga en el DataSet.
-                        while (!reader.IsClosed)
-                            results.Tables.Add().Load(reader);
-                    }
-
-                }
-
-
-
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException($"Error al ejecutar el procedimiento almacenado: {ex.Message}", ex);
-            }
-
-            return results;
-        }
-
-
-        /// <summary>
-        /// Executes a stored procedure asynchronously and maps the result to the specified type.
-        /// </summary>
-        /// <remarks>If T is DataSet, the entire result set is returned. If T is DataTable, only the first
-        /// result table is returned. If T is DataRow, only the first row of the first result table is returned. For
-        /// scalar types, the value of the first column of the first row is returned. If no data is available, null is
-        /// returned. The method does not automatically map complex types; for custom mapping, additional processing may
-        /// be required.</remarks>
-        /// <typeparam name="T">The type to which the result of the stored procedure will be mapped. Supported types are DataSet, DataTable,
-        /// DataRow, or a scalar type corresponding to the first column of the first row in the result set.</typeparam>
-        /// <param name="nameStoredProcedure">The name of the stored procedure to execute. Cannot be null or empty.</param>
-        /// <param name="parameters">An array of SQL parameters to pass to the stored procedure, or null if no parameters are required.</param>
-        /// <param name="ct">A cancellation token that can be used to cancel the asynchronous operation.</param>
-        /// <param name="Timeout">The command timeout, in seconds. If set to 0 or less, the default timeout of 30 seconds is used.</param>
-        /// <returns>A task that represents the asynchronous operation. The task result contains the mapped result of the stored
-        /// procedure as type T, or null if no data is returned.</returns>
-        /// <exception cref="InvalidOperationException">Thrown if a SQL error occurs during execution of the stored procedure.</exception>
-        public async Task<T?> ExecuteStoredProcedureAsync<T>(
-            string nameStoredProcedure,
-            SqlParameter[]? parameters = default,
-            CancellationToken ct = default,
-            int Timeout = default)
-        {
-            // Mapear a Dataset segun el <T> generico solicitado
-            object? mapped = null;
-            try
-            {
-
-                using (var conn = GetConnection())
-                {
-                    await conn.OpenAsync(ct);
-                    await using var cmd = new SqlCommand(nameStoredProcedure, conn)
-                    {
-                        CommandType = CommandType.StoredProcedure,
-                        CommandTimeout = Timeout > 0 ? Timeout : 30 // Default timeout is 30 seconds
-                    };
-
-                    if (parameters != default)
-                        cmd.Parameters.AddRange(parameters);
-
-                    var results = new DataSet();
-
-                    // Use an async reader and populate one DataTable per result set.
-                    await using var reader = await cmd.ExecuteReaderAsync(ct);
-
-                    do
-                    {
-                        if (reader.FieldCount > 0)
-                        {
-                            var dataTable = new DataTable();
-
-                            // Crear Columnas desde el esquema del Reader (Asegurar que sea nombre unico por columnas )
-                            for (int i = 0; i < reader.FieldCount; i++)
-                            {
-                                Type colType;
-                                try
-                                {
-                                    colType = reader.GetFieldType(i);
-                                }
-                                catch
-                                {
-                                    colType = typeof(object);
-                                }
-
-                                var rawName = reader.GetName(i);
-                                var baseName = string.IsNullOrEmpty(rawName) ? $"Column{i}" : rawName;
-                                var uniqueName = GetUniqueColumnName(dataTable, baseName);
-
-                                dataTable.Columns.Add(new DataColumn(uniqueName, colType));
-                            }
-
-                            // leer filasa de forma asincrona y añador a las tablas
-                            var values = new object[reader.FieldCount];
-                            while (await reader.ReadAsync(ct))
-                            {
-                                reader.GetValues(values);
-                                var rowValues = new object[values.Length];
-                                Array.Copy(values, rowValues, values.Length);
-                                dataTable.Rows.Add(rowValues);
-                            }
-
-                            results.Tables.Add(dataTable);
-                        }
-                    } while (await reader.NextResultAsync(ct));
-
-
-                    if (typeof(T) == typeof(DataSet))
-                    {
-                        mapped = results;
-                    }
-                    else if (typeof(T) == typeof(DataTable))
-                    {
-                        mapped = results.Tables.Count > 0 ? results.Tables[0] : new DataTable();
-                    }
-                    else if (typeof(T) == typeof(DataRow))
-                    {
-                        mapped = (results.Tables.Count > 0 && results.Tables[0].Rows.Count > 0) ? results.Tables[0].Rows[0] : null;
-                    }
-                    else
-                    {
-                        // si es un tipo scalaer el generico entoces se toma primer valor de la tabla y primera fila 
-                        if (results.Tables.Count > 0 && results.Tables[0].Rows.Count > 0 && results.Tables[0].Columns.Count > 0)
-                        {
-                            var val = results.Tables[0].Rows[0][0];
-                            if (val == DBNull.Value)
-                                mapped = null;
-                            else
-                            {
-                                var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
-                                try
-                                {
-                                    if (targetType.IsInstanceOfType(val))
-                                        mapped = val;
-                                    else
-                                        mapped = Convert.ChangeType(val, targetType);
-                                }
-                                catch
-                                {
-                                    //  intentar cambiar mediante la serialización System.Text.Json para tipos complejo
-                                    try
-                                    {
-                                        var json = System.Text.Json.JsonSerializer.Serialize(val);
-                                        mapped = System.Text.Json.JsonSerializer.Deserialize(json, targetType);
-                                    }
-                                    catch
-                                    {
-                                        mapped = null;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                }
-
-            }
-            catch (SqlException ex)
-            {
-                throw new InvalidOperationException($"Error SQL: {ex.Message}", ex);
-            }
-
-            return (T?)mapped;
-        }
-
-        /// <summary>
-        /// Creates a fluent query operation so callers can write:
-        ///   await db.QueryAsync("select ...").AsDataTable();
-        /// </summary>
-        /// <param name="sqlCommand">SQL text to execute (required)</param>
-        /// <param name="parameters">Optional SQL parameters</param>
-        /// <param name="ct">Optional cancellation token</param>
-        /// <param name="Timeout">Optional command timeout in seconds</param>
-        /// <returns>A query operation with AsDataTable/AsDataSet/As{T} helpers.</returns>
-        public QueryOperation QueryAsync(
-            [Required] string sqlCommand,
-            SqlParameter[]? parameters = default,
-            CancellationToken ct = default,
-            int Timeout = default)
-        {
-            if (string.IsNullOrWhiteSpace(sqlCommand))
-                throw new ArgumentException("sqlCommand cannot be null or empty.", nameof(sqlCommand));
-
-            return new QueryOperation(this, sqlCommand, parameters, ct, Timeout);
-        }
-
-        /// <summary>
-        /// Helper returned by <see cref="QueryAsync(string, SqlParameter[], CancellationToken, int)"/>.
-        /// Provides async mapping methods such as AsDataTable() and AsDataSet().
-        /// </summary>
-        public sealed class QueryOperation
-        {
-            private readonly SqlClientService _service;
-            private readonly string _sql;
-            private readonly SqlParameter[]? _parameters;
-            private readonly CancellationToken _ct;
-            private readonly int _timeout;
-
-            internal QueryOperation(SqlClientService service, string sql, SqlParameter[]? parameters, CancellationToken ct, int timeout)
-            {
-                _service = service;
-                _sql = sql;
-                _parameters = parameters;
-                _ct = ct;
-                _timeout = timeout;
-            }
-
-            /// <summary>
-            /// Ejecuta la consulta y devuelve el primer DataTable como resultado.
-            /// Uso: await db.QueryAsync("select ...").AsDataTable();
-            /// </summary>
-            public Task<DataTable> AsDataTable()
-                => _service.QueryAsyncAsDataTable(_sql, _parameters, _ct, _timeout);
-
-            /// <summary>
-            /// Ejecuta la consulta y devuelve un DataSet con todos los result sets.
-            /// Uso: await db.QueryAsync("select ...").AsDataSet();
-            /// </summary>
-            public Task<DataSet> AsDataSet()
-                => _service.ExecuteAsyncAsDataSet(_sql, _parameters, _ct, _timeout);
-
-            /// <summary>
-            /// Ejecuta la consulta y mapea el resultado al tipo T.
-            /// Comportamiento igual que ExecuteStoredProcedureAsync{T} respecto a DataSet/DataTable/DataRow/scalar.
-            /// Uso: await db.QueryAsync("select ...").As{T}();
-            /// </summary>
-            public async Task<T?> As<T>()
-            {
-                object? mapped = null;
-
-                var results = await _service.ExecuteAsyncAsDataSet(_sql, _parameters, _ct, _timeout).ConfigureAwait(false);
-
-                if (typeof(T) == typeof(DataSet))
-                {
-                    mapped = results;
-                }
-                else if (typeof(T) == typeof(DataTable))
-                {
-                    mapped = results.Tables.Count > 0 ? results.Tables[0] : new DataTable();
-                }
-                else if (typeof(T) == typeof(DataRow))
-                {
-                    mapped = (results.Tables.Count > 0 && results.Tables[0].Rows.Count > 0) ? results.Tables[0].Rows[0] : null;
-                }
-                else
-                {
-                    if (results.Tables.Count > 0 && results.Tables[0].Rows.Count > 0 && results.Tables[0].Columns.Count > 0)
-                    {
-                        var val = results.Tables[0].Rows[0][0];
-                        if (val == DBNull.Value)
-                            mapped = null;
-                        else
-                        {
-                            var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
-                            try
-                            {
-                                if (targetType.IsInstanceOfType(val))
-                                    mapped = val;
-                                else
-                                    mapped = Convert.ChangeType(val, targetType);
-                            }
-                            catch
-                            {
-                                try
-                                {
-                                    var json = System.Text.Json.JsonSerializer.Serialize(val);
-                                    mapped = System.Text.Json.JsonSerializer.Deserialize(json, targetType);
-                                }
-                                catch
-                                {
-                                    mapped = null;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                return (T?)mapped;
+                command.Parameters.Add(sqlParam);
             }
         }
 
-        /// <summary>
-        /// Generates a unique column name for the specified DataTable based on the provided base name.
-        /// </summary>
-        /// <param name="table">The DataTable in which to ensure the uniqueness of the column name. Cannot be null.</param>
-        /// <param name="baseName">The base name to use when generating the unique column name. Cannot be null or empty.</param>
-        /// <returns>A column name that is unique within the Columns collection of the specified DataTable. If the base name is
-        /// not already used, it is returned as-is; otherwise, a numeric suffix is appended to create a unique name.</returns>
-        private static string GetUniqueColumnName(DataTable table, string baseName)
-        {
-            if (!table.Columns.Contains(baseName))
-                return baseName;
-
-            var suffix = 1;
-            string candidate;
-            do
-            {
-                candidate = $"{baseName}_{suffix++}";
-            } while (table.Columns.Contains(candidate));
-
-            return candidate;
-        }
-
-
+        #endregion
     }
+
+    #endregion
 }
