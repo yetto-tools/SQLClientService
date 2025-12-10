@@ -68,6 +68,9 @@ namespace DBSQLClient.Servicio.Conexion
         
         Task<SqlQueryResult> ExecuteAsync(string storeProcedureName, SqlParameters[] parameters, CancellationToken cancellationToken);
         Task<SqlQueryResult> ExecuteAsync(string storeProcedureName, SqlParameters[] parameters, int timeout);
+
+
+
     }
 
 

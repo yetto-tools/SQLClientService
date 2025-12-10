@@ -1,12 +1,14 @@
+using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Data.SqlClient;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Data.SqlClient;
 
 
 namespace DBSQLClient.Servicio.Conexion
@@ -60,6 +62,14 @@ namespace DBSQLClient.Servicio.Conexion
     public class SqlQueryResult
     {
         private readonly DataSet _dataSet;
+
+        private static readonly JsonSerializerOptions DefaultJsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            WriteIndented = false,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            Converters = { new JsonStringEnumConverter() }
+        };
 
         internal SqlQueryResult(DataSet dataSet)
         {
@@ -167,6 +177,165 @@ namespace DBSQLClient.Servicio.Conexion
         /// Indica si el resultado tiene filas.
         /// </summary>
         public bool HasRows => RowCount > 0;
+        #region Métodos de Serialización JSON
+
+        /// <summary>
+        /// Serializa el DataTable a formato JSON.
+        /// </summary>
+        /// <param name="options">Opciones de serialización JSON (opcional).</param>
+        /// <returns>Cadena JSON representando los datos.</returns>
+        public string ToJson(JsonSerializerOptions? options = null)
+        {
+            var table = AsDataTable();
+            var rows = new List<Dictionary<string, object?>>();
+
+            foreach (DataRow row in table.Rows)
+            {
+                var dict = new Dictionary<string, object?>();
+                foreach (DataColumn col in table.Columns)
+                {
+                    dict[col.ColumnName] = row[col] == DBNull.Value ? null : row[col];
+                }
+                rows.Add(dict);
+            }
+
+            return JsonSerializer.Serialize(rows, options ?? DefaultJsonOptions);
+        }
+
+        /// <summary>
+        /// Serializa el resultado a JSON como una lista de objetos tipados.
+        /// </summary>
+        /// <typeparam name="T">Tipo de objeto a serializar.</typeparam>
+        /// <param name="options">Opciones de serialización JSON (opcional).</param>
+        /// <returns>Cadena JSON representando la lista de objetos.</returns>
+        public string ToJson<T>(JsonSerializerOptions? options = null) where T : new()
+        {
+            var list = ToList<T>();
+            return JsonSerializer.Serialize(list, options ?? DefaultJsonOptions);
+        }
+
+        /// <summary>
+        /// Serializa todas las tablas del DataSet a JSON.
+        /// </summary>
+        /// <param name="options">Opciones de serialización JSON (opcional).</param>
+        /// <returns>Diccionario con el nombre de la tabla como clave y los datos en JSON como valor.</returns>
+        public string ToJsonDataSet(JsonSerializerOptions? options = null)
+        {
+            var dataSetDict = new Dictionary<string, List<Dictionary<string, object?>>>();
+
+            foreach (DataTable table in _dataSet.Tables)
+            {
+                var rows = new List<Dictionary<string, object?>>();
+                foreach (DataRow row in table.Rows)
+                {
+                    var dict = new Dictionary<string, object?>();
+                    foreach (DataColumn col in table.Columns)
+                    {
+                        dict[col.ColumnName] = row[col] == DBNull.Value ? null : row[col];
+                    }
+                    rows.Add(dict);
+                }
+                dataSetDict[string.IsNullOrEmpty(table.TableName) ? $"Table{_dataSet.Tables.IndexOf(table)}" : table.TableName] = rows;
+            }
+
+            return JsonSerializer.Serialize(dataSetDict, options ?? DefaultJsonOptions);
+        }
+
+        /// <summary>
+        /// Guarda el resultado en un archivo JSON.
+        /// </summary>
+        /// <param name="filePath">Ruta del archivo donde guardar el JSON.</param>
+        /// <param name="options">Opciones de serialización JSON (opcional).</param>
+        public async Task SaveToJsonFileAsync(string filePath, JsonSerializerOptions? options = null)
+        {
+            var json = ToJson(options);
+            await System.IO.File.WriteAllTextAsync(filePath, json);
+        }
+
+        /// <summary>
+        /// Guarda el resultado tipado en un archivo JSON.
+        /// </summary>
+        /// <typeparam name="T">Tipo de objeto a serializar.</typeparam>
+        /// <param name="filePath">Ruta del archivo donde guardar el JSON.</param>
+        /// <param name="options">Opciones de serialización JSON (opcional).</param>
+        public async Task SaveToJsonFileAsync<T>(string filePath, JsonSerializerOptions? options = null) where T : new()
+        {
+            var json = ToJson<T>(options);
+            await System.IO.File.WriteAllTextAsync(filePath, json);
+        }
+
+        #endregion
+
+        #region Métodos de Deserialización JSON
+
+        /// <summary>
+        /// Deserializa una cadena JSON a una lista de objetos del tipo especificado.
+        /// </summary>
+        /// <typeparam name="T">Tipo de objeto a deserializar.</typeparam>
+        /// <param name="json">Cadena JSON a deserializar.</param>
+        /// <param name="options">Opciones de deserialización JSON (opcional).</param>
+        /// <returns>Lista de objetos deserializados.</returns>
+        public static List<T> FromJson<T>(string json, JsonSerializerOptions? options = null)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return new List<T>();
+
+            return JsonSerializer.Deserialize<List<T>>(json, options ?? DefaultJsonOptions) ?? new List<T>();
+        }
+
+        /// <summary>
+        /// Deserializa un archivo JSON a una lista de objetos del tipo especificado.
+        /// </summary>
+        /// <typeparam name="T">Tipo de objeto a deserializar.</typeparam>
+        /// <param name="filePath">Ruta del archivo JSON a deserializar.</param>
+        /// <param name="options">Opciones de deserialización JSON (opcional).</param>
+        /// <returns>Lista de objetos deserializados.</returns>
+        public static async Task<List<T>> FromJsonFileAsync<T>(string filePath, JsonSerializerOptions? options = null)
+        {
+            if (!System.IO.File.Exists(filePath))
+                throw new System.IO.FileNotFoundException($"El archivo '{filePath}' no existe.");
+
+            var json = await System.IO.File.ReadAllTextAsync(filePath);
+            return FromJson<T>(json, options);
+        }
+
+        /// <summary>
+        /// Deserializa una cadena JSON a un DataTable.
+        /// </summary>
+        /// <param name="json">Cadena JSON a deserializar.</param>
+        /// <returns>DataTable con los datos deserializados.</returns>
+        public static DataTable FromJsonToDataTable(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return new DataTable();
+
+            var rows = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(json);
+            if (rows == null || rows.Count == 0)
+                return new DataTable();
+
+            var table = new DataTable();
+
+            // Crear columnas basadas en la primera fila
+            foreach (var key in rows[0].Keys)
+            {
+                table.Columns.Add(key);
+            }
+
+            // Agregar filas
+            foreach (var row in rows)
+            {
+                var dataRow = table.NewRow();
+                foreach (var kvp in row)
+                {
+                    dataRow[kvp.Key] = kvp.Value ?? DBNull.Value;
+                }
+                table.Rows.Add(dataRow);
+            }
+
+            return table;
+        }
+
+        #endregion
     }
 
     #endregion
@@ -349,10 +518,20 @@ namespace DBSQLClient.Servicio.Conexion
 
                 AddParameters(command, parameters);
 
-                using var adapter = new SqlDataAdapter(command);
-                var dataSet = new DataSet();
+                //using var adapter = new SqlDataAdapter(command);
+                //var dataSet = new DataSet();
 
-                await Task.Run(() => adapter.Fill(dataSet), cancellationToken);
+                //await Task.Run(() => adapter.Fill(dataSet), cancellationToken);
+
+                using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                var dataSet = new DataSet();
+                
+                while (!reader.IsClosed)
+                {
+                    var dataTable = new DataTable();
+                    dataTable.Load(reader);
+                    dataSet.Tables.Add(dataTable);
+                };
 
                 return new SqlQueryResult(dataSet);
             }
