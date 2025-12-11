@@ -52,9 +52,10 @@ namespace DBSQLClient
                     };
 
 
-                    var user = result.OneToMany<UserModel, UserRoles>("Roles").ToJsonString(_options);
+                    var user = result.OneToMany<UserModel, UserRoles>("Roles").ToJsonDocument(_options);
 
-                    
+                    File.WriteAllText("./result.json", user.RootElement.GetRawText());
+
                     Console.WriteLine($"{user}");
                     //Console.WriteLine($"Usuario: {user.Nombre}");
                     //foreach (var rol in user.Roles)
@@ -103,7 +104,7 @@ namespace DBSQLClient
                 {
                     var UserList = await db.ExecuteAsync("sp_Get_User");
 
-                    var json = UserList.ToJson<UserModel>(options: new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+                    var json = UserList.OneToMany<UserModel, UserModel>("Roles");
 
                     Console.WriteLine(json);
 

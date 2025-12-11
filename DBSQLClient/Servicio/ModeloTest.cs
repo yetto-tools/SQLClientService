@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Text;
 using System.Text.Json.Serialization;
 
@@ -40,6 +41,8 @@ namespace DBSQLClient.Models
     public class UserRoles
     {
         public int RolId { get; set; }
+        
+        //[JsonPropertyName("Rol")]
         public string? Nombre { get; set; }
         public int UserId { get; set; }  // ⚠️ FK necesaria
     }
