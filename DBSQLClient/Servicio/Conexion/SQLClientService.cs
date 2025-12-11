@@ -1,5 +1,4 @@
-using Microsoft.Data.SqlClient;
-using System;
+ï»¿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Data;
@@ -9,71 +8,35 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
 
 
 namespace DBSQLClient.Servicio.Conexion
 {
+    #region Interfaces
+
+    #endregion
+
     #region Clases de Soporte
 
-    /// <summary>
-    /// Representa un parámetro SQL con nombre, valor y tipo de datos.
-    /// </summary>
-    public class SqlParameters
-    {
-        public string Name { get; set; }
-        public object? Value { get; set; }
-        public SqlDbType? DbType { get; set; }
-        public ParameterDirection Direction { get; set; } = ParameterDirection.Input;
-        public int? Size { get; set; }
-
-        public SqlParameters(string name, object? value)
-        {
-            Name = name;
-            Value = value;
-        }
-
-        public SqlParameters(string name, object? value, SqlDbType dbType)
-        {
-            Name = name;
-            Value = value;
-            DbType = dbType;
-        }
-
-        public SqlParameters(string name, object? value, SqlDbType dbType, ParameterDirection direction)
-        {
-            Name = name;
-            Value = value;
-            DbType = dbType;
-            Direction = direction;
-        }
-
-        public SqlParameters(string name, object? value, SqlDbType dbType, int size)
-        {
-            Name = name;
-            Value = value;
-            DbType = dbType;
-            Size = size;
-        }
-    }
 
     /// <summary>
-    /// Resultado de una consulta SQL que proporciona múltiples formatos de salida.
+    /// Resultado de una consulta SQL que proporciona mÃºltiples formatos de salida.
     /// </summary>
     public class SqlQueryResult
     {
         private readonly DataSet _dataSet;
-
         private static readonly JsonSerializerOptions DefaultJsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
-            WriteIndented = false,
+            WriteIndented = true,
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             Converters = { new JsonStringEnumConverter() }
         };
 
         internal SqlQueryResult(DataSet dataSet)
         {
-            _dataSet = dataSet ?? new DataSet();
+            _dataSet = dataSet.Copy() ?? new DataSet();
         }
 
         /// <summary>
@@ -90,34 +53,12 @@ namespace DBSQLClient.Servicio.Conexion
         }
 
         /// <summary>
-        /// Devuelve una tabla de datos (DataTable) del conjunto de datos subyacente (DataSet) en el índice especificado, o la primera tabla si no se ha especificado ningún índice.
-        /// provided.
-        /// </summary>
-        /// <remarks>Si el conjunto de datos no contiene tablas o el índice especificado está fuera de rango, se devuelve una tabla de datos vacía
-        /// en lugar de lanzar una excepción.</remarks>
-        /// <param name="IndexTable">El índice base cero de la tabla que se va a recuperar del conjunto de datos. Si es nulo o menor o igual que cero,
-        /// se devuelve la primera tabla.</param>
-        /// <returns>Una tabla de datos en el índice especificado, si existe; de lo contrario, una tabla de datos vacía.</returns>
-        public DataTable AsDataTable(int? IndexTable = 0)
-        {
-            if(IndexTable.HasValue && IndexTable > 0)
-            {
-                return _dataSet.Tables.Count > IndexTable.Value ? _dataSet.Tables[IndexTable.Value] : new DataTable();
-            }
-
-            return _dataSet.Tables.Count > 0 ? _dataSet.Tables[0] : new DataTable();
-        }
-
-        
-        /// <summary>
         /// Devuelve las columnas de la primera tabla.
         /// </summary>
         public DataColumnCollection AsDataColumns()
         {
             return AsDataTable().Columns;
         }
-
-     
 
         /// <summary>
         /// Devuelve las filas de la primera tabla.
@@ -128,7 +69,7 @@ namespace DBSQLClient.Servicio.Conexion
         }
 
         /// <summary>
-        /// Devuelve el resultado como una colección enumerable de DataRow.
+        /// Devuelve el resultado como una colecciÃ³n enumerable de DataRow.
         /// </summary>
         public IEnumerable<DataRow> AsEnumerable()
         {
@@ -169,7 +110,7 @@ namespace DBSQLClient.Servicio.Conexion
         }
 
         /// <summary>
-        /// Devuelve el número de filas afectadas.
+        /// Devuelve el nÃºmero de filas afectadas.
         /// </summary>
         public int RowCount => AsDataTable().Rows.Count;
 
@@ -177,12 +118,13 @@ namespace DBSQLClient.Servicio.Conexion
         /// Indica si el resultado tiene filas.
         /// </summary>
         public bool HasRows => RowCount > 0;
-        #region Métodos de Serialización JSON
+
+        #region MÃ©todos de SerializaciÃ³n JSON
 
         /// <summary>
         /// Serializa el DataTable a formato JSON.
         /// </summary>
-        /// <param name="options">Opciones de serialización JSON (opcional).</param>
+        /// <param name="options">Opciones de serializaciÃ³n JSON (opcional).</param>
         /// <returns>Cadena JSON representando los datos.</returns>
         public string ToJson(JsonSerializerOptions? options = null)
         {
@@ -206,7 +148,7 @@ namespace DBSQLClient.Servicio.Conexion
         /// Serializa el resultado a JSON como una lista de objetos tipados.
         /// </summary>
         /// <typeparam name="T">Tipo de objeto a serializar.</typeparam>
-        /// <param name="options">Opciones de serialización JSON (opcional).</param>
+        /// <param name="options">Opciones de serializaciÃ³n JSON (opcional).</param>
         /// <returns>Cadena JSON representando la lista de objetos.</returns>
         public string ToJson<T>(JsonSerializerOptions? options = null) where T : new()
         {
@@ -217,7 +159,7 @@ namespace DBSQLClient.Servicio.Conexion
         /// <summary>
         /// Serializa todas las tablas del DataSet a JSON.
         /// </summary>
-        /// <param name="options">Opciones de serialización JSON (opcional).</param>
+        /// <param name="options">Opciones de serializaciÃ³n JSON (opcional).</param>
         /// <returns>Diccionario con el nombre de la tabla como clave y los datos en JSON como valor.</returns>
         public string ToJsonDataSet(JsonSerializerOptions? options = null)
         {
@@ -245,7 +187,7 @@ namespace DBSQLClient.Servicio.Conexion
         /// Guarda el resultado en un archivo JSON.
         /// </summary>
         /// <param name="filePath">Ruta del archivo donde guardar el JSON.</param>
-        /// <param name="options">Opciones de serialización JSON (opcional).</param>
+        /// <param name="options">Opciones de serializaciÃ³n JSON (opcional).</param>
         public async Task SaveToJsonFileAsync(string filePath, JsonSerializerOptions? options = null)
         {
             var json = ToJson(options);
@@ -257,7 +199,7 @@ namespace DBSQLClient.Servicio.Conexion
         /// </summary>
         /// <typeparam name="T">Tipo de objeto a serializar.</typeparam>
         /// <param name="filePath">Ruta del archivo donde guardar el JSON.</param>
-        /// <param name="options">Opciones de serialización JSON (opcional).</param>
+        /// <param name="options">Opciones de serializaciÃ³n JSON (opcional).</param>
         public async Task SaveToJsonFileAsync<T>(string filePath, JsonSerializerOptions? options = null) where T : new()
         {
             var json = ToJson<T>(options);
@@ -266,14 +208,14 @@ namespace DBSQLClient.Servicio.Conexion
 
         #endregion
 
-        #region Métodos de Deserialización JSON
+        #region MÃ©todos de DeserializaciÃ³n JSON
 
         /// <summary>
         /// Deserializa una cadena JSON a una lista de objetos del tipo especificado.
         /// </summary>
         /// <typeparam name="T">Tipo de objeto a deserializar.</typeparam>
         /// <param name="json">Cadena JSON a deserializar.</param>
-        /// <param name="options">Opciones de deserialización JSON (opcional).</param>
+        /// <param name="options">Opciones de deserializaciÃ³n JSON (opcional).</param>
         /// <returns>Lista de objetos deserializados.</returns>
         public static List<T> FromJson<T>(string json, JsonSerializerOptions? options = null)
         {
@@ -288,7 +230,7 @@ namespace DBSQLClient.Servicio.Conexion
         /// </summary>
         /// <typeparam name="T">Tipo de objeto a deserializar.</typeparam>
         /// <param name="filePath">Ruta del archivo JSON a deserializar.</param>
-        /// <param name="options">Opciones de deserialización JSON (opcional).</param>
+        /// <param name="options">Opciones de deserializaciÃ³n JSON (opcional).</param>
         /// <returns>Lista de objetos deserializados.</returns>
         public static async Task<List<T>> FromJsonFileAsync<T>(string filePath, JsonSerializerOptions? options = null)
         {
@@ -340,31 +282,31 @@ namespace DBSQLClient.Servicio.Conexion
 
     #endregion
 
-    #region Implementación del Servicio
+    #region ImplementaciÃ³n del Servicio
 
     /// <summary>
-    /// Proporciona métodos para ejecutar consultas SQL y procedimientos almacenados de forma asíncrona en una base de datos SQL Server,
+    /// Proporciona mÃ©todos para ejecutar consultas SQL y procedimientos almacenados de forma asÃ­ncrona en una base de datos SQL Server,
     /// devolviendo los resultados como DataTable, DataSet u objetos mapeados.
     /// </summary>
     public class SqlClientService : ISQLClientService
     {
         private readonly string _connectionString;
-        private const int DefaultTimeout = 600; // Timeout por defecto en segundos
+        private const int DefaultTimeout = 600; // timeOutpor defecto en segundos
 
         /// <summary>
-        /// Inicializa una nueva instancia de la clase SqlClientService utilizando la cadena de conexión especificada.
+        /// Inicializa una nueva instancia de la clase SqlClientService utilizando la cadena de conexiÃ³n especificada.
         /// </summary>
-        /// <param name="connectionString">La cadena de conexión utilizada para establecer una conexión con la base de datos.</param>
+        /// <param name="connectionString">La cadena de conexiÃ³n utilizada para establecer una conexiÃ³n con la base de datos.</param>
         public SqlClientService(string connectionString)
         {
             if (string.IsNullOrWhiteSpace(connectionString))
-                throw new ArgumentException("La cadena de conexión no puede ser nula ni estar vacía.", nameof(connectionString));
+                throw new ArgumentException("La cadena de conexiÃ³n no puede ser nula ni estar vacÃ­a.", nameof(connectionString));
 
             _connectionString = connectionString;
         }
 
         /// <summary>
-        /// Obtiene una nueva conexión a la base de datos SQL.
+        /// Obtiene una nueva conexiÃ³n a la base de datos SQL.
         /// </summary>
         private SqlConnection GetConnection()
         {
@@ -374,57 +316,32 @@ namespace DBSQLClient.Servicio.Conexion
             }
             catch (SqlException ex)
             {
-                throw new InvalidOperationException($"Error al crear la conexión SQL: {ex.Message}", ex);
+                throw new InvalidOperationException($"Error al crear la conexiÃ³n SQL: {ex.Message}", ex);
             }
         }
 
-        #region Métodos QueryAsync
+        #region MÃ©todos QueryAsync
+
+        
 
         /// <summary>
-        /// Ejecuta una consulta SQL de forma asíncrona.
+        /// MÃ©todo privado que ejecuta una consulta SQL con todos los parÃ¡metros opcionales.
         /// </summary>
-        public Task<SqlQueryResult> QueryAsync(string query)
-        {
-            return QueryAsync(query, null, null, DefaultTimeout);
-        }
-
-        /// <summary>
-        /// Ejecuta una consulta SQL con parámetros de forma asíncrona.
-        /// </summary>
-        public Task<SqlQueryResult> QueryAsync(string query, SqlParameters[]? parameters)
-        {
-            return QueryAsync(query, parameters, null, DefaultTimeout);
-        }
-
-        /// <summary>
-        /// Ejecuta una consulta SQL con parámetros y token de cancelación de forma asíncrona.
-        /// </summary>
-        public Task<SqlQueryResult> QueryAsync(string query, SqlParameters[]? parameters, CancellationToken? cancellationToken)
-        {
-            return QueryAsync(query, parameters, cancellationToken, DefaultTimeout);
-        }
-
-        /// <summary>
-        /// Ejecuta una consulta SQL con parámetros y timeout personalizado de forma asíncrona.
-        /// </summary>
-        public Task<SqlQueryResult> QueryAsync(string query, SqlParameters[]? parameters, int? timeout)
-        {
-            return QueryAsync(query, parameters, null, timeout ?? DefaultTimeout);
-        }
-
-        /// <summary>
-        /// Método privado que ejecuta una consulta SQL con todos los parámetros opcionales.
-        /// </summary>
-        private async Task<SqlQueryResult> QueryAsync(
-            string query,
-            SqlParameters[]? parameters,
-            CancellationToken? cancellationToken,
-            int timeout)
-        {
+        public async Task<SqlQueryResult>QueryAsync([Required]string query, SqlParameter[]? parameters = null, CancellationToken? cancellationToken = null, int? timeout = null)
+        { 
+            
             if (string.IsNullOrWhiteSpace(query))
-                throw new ArgumentException("La consulta no puede ser nula ni estar vacía.", nameof(query));
+                throw new ArgumentException("La consulta no puede ser nula ni estar vacÃ­a.", nameof(query));
 
+            // âœ… Validaciones
+            if (string.IsNullOrWhiteSpace(query))
+                throw new ArgumentException("...", nameof(query));
+
+            // âœ… LÃ³gica correcta
             var token = cancellationToken ?? CancellationToken.None;
+            var commandTimeout = timeout ?? DefaultTimeout;
+
+
 
             try
             {
@@ -434,16 +351,21 @@ namespace DBSQLClient.Servicio.Conexion
                 using var command = new SqlCommand(query, connection)
                 {
                     CommandType = CommandType.Text,
-                    CommandTimeout = timeout
+                    CommandTimeout= commandTimeout
                 };
 
-                AddParameters(command, parameters);
+                if (parameters != null)
+                    command.Parameters.AddRange(parameters);
 
-                using var adapter = new SqlDataAdapter(command);
-                var dataSet = new DataSet();
 
-                // SqlDataAdapter.Fill no tiene versión async nativa, pero se ejecuta en un contexto no bloqueante
-                await Task.Run(() => adapter.Fill(dataSet), token);
+                using var reader = await command.ExecuteReaderAsync(token);
+                using var dataSet = new DataSet();
+                while (!reader.IsClosed)
+                {
+                    var dataTable = new DataTable();
+                    dataTable.Load(reader);
+                    dataSet.Tables.Add(dataTable);
+                };
 
                 return new SqlQueryResult(dataSet);
             }
@@ -453,79 +375,50 @@ namespace DBSQLClient.Servicio.Conexion
             }
             catch (OperationCanceledException)
             {
-                throw new OperationCanceledException("La operación de consulta fue cancelada.");
+                throw new OperationCanceledException("La operaciÃ³n de consulta fue cancelada.");
             }
         }
 
         #endregion
 
-        #region Métodos ExecuteAsync
+        #region MÃ©todos ExecuteAsync
+
+
 
         /// <summary>
-        /// Ejecuta un procedimiento almacenado de forma asíncrona.
+        /// MÃ©todo privado que ejecuta un procedimiento almacenado con todos los parÃ¡metros opcionales.
         /// </summary>
-        public Task<SqlQueryResult> ExecuteAsync(string storeProcedureName)
-        {
-            return ExecuteAsync(storeProcedureName, Array.Empty<SqlParameters>(), CancellationToken.None, DefaultTimeout);
-        }
-
-        /// <summary>
-        /// Ejecuta un procedimiento almacenado con parámetros de forma asíncrona.
-        /// </summary>
-        public Task<SqlQueryResult> ExecuteAsync(string storeProcedureName, SqlParameters[] parameters)
-        {
-            return ExecuteAsync(storeProcedureName, parameters, CancellationToken.None, DefaultTimeout);
-        }
-
-        /// <summary>
-        /// Ejecuta un procedimiento almacenado con parámetros y token de cancelación de forma asíncrona.
-        /// </summary>
-        public Task<SqlQueryResult> ExecuteAsync(string storeProcedureName, SqlParameters[] parameters, CancellationToken cancellationToken)
-        {
-            return ExecuteAsync(storeProcedureName, parameters, cancellationToken, DefaultTimeout);
-        }
-
-        /// <summary>
-        /// Ejecuta un procedimiento almacenado con parámetros y timeout personalizado de forma asíncrona.
-        /// </summary>
-        public Task<SqlQueryResult> ExecuteAsync(string storeProcedureName, SqlParameters[] parameters, int timeout)
-        {
-            return ExecuteAsync(storeProcedureName, parameters, CancellationToken.None, timeout);
-        }
-
-        /// <summary>
-        /// Método privado que ejecuta un procedimiento almacenado con todos los parámetros opcionales.
-        /// </summary>
-        private async Task<SqlQueryResult> ExecuteAsync(
-            string storeProcedureName,
-            SqlParameters[] parameters,
-            CancellationToken cancellationToken,
-            int timeout)
+        public async Task<SqlQueryResult> ExecuteAsync([Required] string storeProcedureName, SqlParameter[]? parameters = null, CancellationToken? cancellationToken = null, int? timeout = null)
         {
             if (string.IsNullOrWhiteSpace(storeProcedureName))
-                throw new ArgumentException("El nombre del procedimiento almacenado no puede ser nulo ni estar vacío.", nameof(storeProcedureName));
+                throw new ArgumentException("El nombre del procedimiento almacenado no puede ser nulo ni estar vacÃ­o.", nameof(storeProcedureName));
 
             try
             {
+
+                // âœ… Validaciones
+                if (string.IsNullOrWhiteSpace(storeProcedureName))
+                    throw new ArgumentException("...", nameof(storeProcedureName));
+
+                // âœ… LÃ³gica correcta
+                var token = cancellationToken ?? CancellationToken.None;
+                var commandTimeout = timeout ?? DefaultTimeout;
+
                 using var connection = GetConnection();
-                await connection.OpenAsync(cancellationToken);
+                await connection.OpenAsync(token);
 
                 using var command = new SqlCommand(storeProcedureName, connection)
                 {
                     CommandType = CommandType.StoredProcedure,
-                    CommandTimeout = timeout
+                    CommandTimeout = commandTimeout
                 };
 
-                AddParameters(command, parameters);
+                if (parameters != null)
+                    command.Parameters.AddRange(parameters);
 
-                //using var adapter = new SqlDataAdapter(command);
-                //var dataSet = new DataSet();
 
-                //await Task.Run(() => adapter.Fill(dataSet), cancellationToken);
-
-                using var reader = await command.ExecuteReaderAsync(cancellationToken);
-                var dataSet = new DataSet();
-                
+                using var reader = await command.ExecuteReaderAsync(token);
+                using var dataSet = new DataSet();
                 while (!reader.IsClosed)
                 {
                     var dataTable = new DataTable();
@@ -541,42 +434,13 @@ namespace DBSQLClient.Servicio.Conexion
             }
             catch (OperationCanceledException)
             {
-                throw new OperationCanceledException($"La ejecución del procedimiento almacenado '{storeProcedureName}' fue cancelada.");
+                throw new OperationCanceledException($"La ejecuciÃ³n del procedimiento almacenado '{storeProcedureName}' fue cancelada.");
             }
         }
 
         #endregion
 
-        #region Métodos Auxiliares
 
-        /// <summary>
-        /// Agrega parámetros a un comando SQL.
-        /// </summary>
-        private void AddParameters(SqlCommand command, SqlParameters[]? parameters)
-        {
-            if (parameters == null || parameters.Length == 0)
-                return;
-
-            foreach (var param in parameters)
-            {
-                var sqlParam = new SqlParameter
-                {
-                    ParameterName = param.Name.StartsWith("@") ? param.Name : $"@{param.Name}",
-                    Value = param.Value ?? DBNull.Value,
-                    Direction = param.Direction
-                };
-
-                if (param.DbType.HasValue)
-                    sqlParam.SqlDbType = param.DbType.Value;
-
-                if (param.Size.HasValue)
-                    sqlParam.Size = param.Size.Value;
-
-                command.Parameters.Add(sqlParam);
-            }
-        }
-
-        #endregion
     }
 
     #endregion
