@@ -25,7 +25,7 @@ namespace DBSQLClient.Servicio.Conexion
     /// </summary>
     public class SqlQueryResult
     {
-        private readonly DataSet _dataSet;
+        private readonly DataSet _Data_Result;
         private static readonly JsonSerializerOptions DefaultJsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
@@ -36,20 +36,22 @@ namespace DBSQLClient.Servicio.Conexion
 
         internal SqlQueryResult(DataSet dataSet)
         {
-            _dataSet = dataSet.Copy() ?? new DataSet();
+            _Data_Result = dataSet.Copy() ?? new DataSet();
         }
+
+
 
         /// <summary>
         /// Devuelve el resultado como DataSet completo.
         /// </summary>
-        public DataSet AsDataSet() => _dataSet;
+        public DataSet AsDataSet() => _Data_Result;
 
         /// <summary>
         /// Devuelve la primera tabla del resultado como DataTable.
         /// </summary>
         public DataTable AsDataTable()
         {
-            return _dataSet.Tables.Count > 0 ? _dataSet.Tables[0] : new DataTable();
+            return _Data_Result.Tables.Count > 0 ? _Data_Result.Tables[0] : new DataTable();
         }
 
         /// <summary>
@@ -165,7 +167,7 @@ namespace DBSQLClient.Servicio.Conexion
         {
             var dataSetDict = new Dictionary<string, List<Dictionary<string, object?>>>();
 
-            foreach (DataTable table in _dataSet.Tables)
+            foreach (DataTable table in _Data_Result.Tables)
             {
                 var rows = new List<Dictionary<string, object?>>();
                 foreach (DataRow row in table.Rows)
@@ -177,7 +179,7 @@ namespace DBSQLClient.Servicio.Conexion
                     }
                     rows.Add(dict);
                 }
-                dataSetDict[string.IsNullOrEmpty(table.TableName) ? $"Table{_dataSet.Tables.IndexOf(table)}" : table.TableName] = rows;
+                dataSetDict[string.IsNullOrEmpty(table.TableName) ? $"Table{_Data_Result.Tables.IndexOf(table)}" : table.TableName] = rows;
             }
 
             return JsonSerializer.Serialize(dataSetDict, options ?? DefaultJsonOptions);
