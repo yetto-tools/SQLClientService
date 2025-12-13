@@ -1,10 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Text;
+﻿using System.Data;
 using Microsoft.Data.SqlClient;
 
-namespace DBSQLClient.Servicio.Helpers
+namespace DBSQLClient.Helpers
 {
     /// <summary>
     /// Helper para crear parámetros SQL de forma simplificada.
@@ -390,4 +387,7 @@ namespace DBSQLClient.Servicio.Helpers
     }
 
     #endregion
+
 }
+
+

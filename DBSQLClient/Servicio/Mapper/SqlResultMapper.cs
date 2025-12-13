@@ -1,11 +1,10 @@
-﻿using DBSQLClient.Servicio.Conexion;
-using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Linq;
+﻿using System.Data;
 using System.Reflection;
+using DBSQLClient.Conexion;
+using DBSQLClient.Servicio.Mapper.RelationsMapper;
 
-namespace DBSQLClient.Servicio.Helpers
+
+namespace DBSQLClient.Servicio.Mapper.RelationsMapper
 {
     /// <summary>
     /// Helper para mapear resultados con relaciones padre-hijo.
@@ -139,7 +138,98 @@ namespace DBSQLClient.Servicio.Helpers
 
             return list;
         }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <typeparam name="TLeft"></typeparam>
+        /// <typeparam name="TRight"></typeparam>
+        /// <typeparam name="TJoin"></typeparam>
+        /// <param name="result"></param>
+        /// <param name="leftCollectionProperty"></param>
+        /// <param name="leftKey"></param>
+        /// <param name="rightKey"></param>
+        /// <param name="joinLeftKey"></param>
+        /// <param name="joinRightKey"></param>
+        /// <returns></returns>
+        /// <example><c>var users = result.MapManyToMany<User, Role, UserRole>(leftCollectionProperty: "Roles",joinLeftKey: "UserId",joinRightKey: "RoleId")</c></example>
+        public static List<TLeft> MapManyToMany<TLeft, TRight, TJoin>(
+            this SqlQueryResult result,
+            string leftCollectionProperty,
+            string leftKey = "Id",
+            string rightKey = "Id",
+            string joinLeftKey = "LeftId",
+            string joinRightKey = "RightId")
+            where TLeft : new()
+            where TRight : new()
+            where TJoin : new()
+        {
+            var lefts = MapRows<TLeft>(result.AsDataTable(0));
+            var rights = MapRows<TRight>(result.AsDataTable(1));
+            var joins = MapRows<TJoin>(result.AsDataTable(2));
+
+            var leftKeyProp = typeof(TLeft).GetProperty(leftKey);
+            var rightKeyProp = typeof(TRight).GetProperty(rightKey);
+            var joinLeftProp = typeof(TJoin).GetProperty(joinLeftKey);
+            var joinRightProp = typeof(TJoin).GetProperty(joinRightKey);
+
+            var rightDict = rights.ToDictionary(
+                r => rightKeyProp!.GetValue(r)!
+            );
+
+            var leftNavProp = typeof(TLeft).GetProperty(leftCollectionProperty);
+
+            foreach (var left in lefts)
+            {
+                var leftId = leftKeyProp!.GetValue(left);
+                var related = joins
+                    .Where(j => Equals(joinLeftProp!.GetValue(j), leftId))
+                    .Select(j => rightDict[joinRightProp!.GetValue(j)!])
+                    .ToList();
+
+                leftNavProp!.SetValue(left, related);
+            }
+
+            return lefts;
+        }
+
+
+
+
+        public static TParent MapOneToOne<TParent, TChild>(
+           this SqlQueryResult result,
+           string childPropertyName)
+           where TParent : new()
+           where TChild : new()
+        {
+            var parentTable = result.AsDataTable(0);
+            var childTable = result.AsDataTable(1);
+
+            if (parentTable.Rows.Count == 0)
+                throw new InvalidOperationException("No se encontró el registro padre.");
+
+            var parent = MapSingleRow<TParent>(parentTable.Rows[0]);
+
+            if (childTable.Rows.Count > 0)
+            {
+                var child = MapSingleRow<TChild>(childTable.Rows[0]);
+                var prop = typeof(TParent).GetProperty(childPropertyName)
+                    ?? throw new ArgumentException($"Propiedad '{childPropertyName}' no encontrada");
+
+                prop.SetValue(parent, child);
+            }
+
+            return parent;
+        }
+
+        private static void SetEmptyCollection(object parent, PropertyInfo prop)
+        {
+            var list = Activator.CreateInstance(prop.PropertyType);
+            prop.SetValue(parent, list);
+        }
+
     }
+}
 
     /// <summary>
     /// Extension methods para SqlQueryResult.
@@ -180,4 +270,3 @@ namespace DBSQLClient.Servicio.Helpers
         }
 
     }
-}

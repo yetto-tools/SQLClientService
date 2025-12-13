@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace DBSQLClient.Servicio.Helpers
+namespace DBSQLClient.Helpers
 {
     public static class ObjectJsonExtensions
     {

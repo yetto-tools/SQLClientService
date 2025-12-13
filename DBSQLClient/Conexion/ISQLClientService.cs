@@ -5,7 +5,7 @@ using System.Data;
 using System.Text;
 using Microsoft.Data.SqlClient;
 
-namespace DBSQLClient.Servicio.Conexion
+namespace DBSQLClient.Conexion
 {
     /// <summary>
     /// Interfaz que define los métodos para interactuar con SQL Server de forma asíncrona.
