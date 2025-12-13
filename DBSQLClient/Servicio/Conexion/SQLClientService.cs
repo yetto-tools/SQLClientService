@@ -336,10 +336,9 @@ namespace DBSQLClient.Servicio.Conexion
             }
         }
 
-        #region Métodos QueryAsync
-
+        #region Funciones Asincronas
         
-
+        #region Métodos QueryAsync
         /// <summary>
         /// Método privado que ejecuta una consulta SQL con todos los parámetros opcionales.
         /// </summary>
@@ -398,9 +397,6 @@ namespace DBSQLClient.Servicio.Conexion
         #endregion
 
         #region Métodos ExecuteAsync
-
-
-
         /// <summary>
         /// Método privado que ejecuta un procedimiento almacenado con todos los parámetros opcionales.
         /// </summary>
@@ -434,6 +430,122 @@ namespace DBSQLClient.Servicio.Conexion
 
 
                 using var reader = await command.ExecuteReaderAsync(token);
+                using var dataSet = new DataSet();
+                while (!reader.IsClosed)
+                {
+                    var dataTable = new DataTable();
+                    dataTable.Load(reader);
+                    dataSet.Tables.Add(dataTable);
+                };
+
+                return new SqlQueryResult(dataSet);
+            }
+            catch (SqlException ex)
+            {
+                throw new InvalidOperationException($"Error al ejecutar el procedimiento almacenado '{storeProcedureName}': {ex.Message}", ex);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new OperationCanceledException($"La ejecución del procedimiento almacenado '{storeProcedureName}' fue cancelada.");
+            }
+        }
+
+        #endregion
+        #endregion
+
+
+        #region Funciones Sincronas
+        /// <summary>
+        /// Método privado que ejecuta una consulta SQL con todos los parámetros opcionales.
+        /// </summary>
+        public SqlQueryResult Query([Required] string query, SqlParameter[]? parameters = null, int? timeout = null)
+        {
+
+            if (string.IsNullOrWhiteSpace(query))
+                throw new ArgumentException("La consulta no puede ser nula ni estar vacía.", nameof(query));
+
+            // ✅ Validaciones
+            if (string.IsNullOrWhiteSpace(query))
+                throw new ArgumentException("...", nameof(query));
+
+            // ✅ Lógica correcta            
+            var commandTimeout = timeout ?? DefaultTimeout;
+
+
+
+            try
+            {
+                using var connection = GetConnection();
+                connection.Open();
+
+                using var command = new SqlCommand(query, connection)
+                {
+                    CommandType = CommandType.Text,
+                    CommandTimeout = commandTimeout
+                };
+
+                if (parameters != null)
+                    command.Parameters.AddRange(parameters);
+
+
+                using var reader =  command.ExecuteReader();
+                using var dataSet = new DataSet();
+                while (!reader.IsClosed)
+                {
+                    var dataTable = new DataTable();
+                    dataTable.Load(reader);
+                    dataSet.Tables.Add(dataTable);
+                }
+                ;
+
+                return new SqlQueryResult(dataSet);
+            }
+            catch (SqlException ex)
+            {
+                throw new InvalidOperationException($"Error al ejecutar la consulta SQL: {ex.Message}", ex);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new OperationCanceledException("La operación de consulta fue cancelada.");
+            }
+        }
+
+        #endregion
+
+
+        #region Métodos ExecuteAsync
+        /// <summary>
+        /// Método privado que ejecuta un procedimiento almacenado con todos los parámetros opcionales.
+        /// </summary>
+        public SqlQueryResult Execute([Required] string storeProcedureName, SqlParameter[]? parameters = null, int? timeout = null)
+        {
+            if (string.IsNullOrWhiteSpace(storeProcedureName))
+                throw new ArgumentException("El nombre del procedimiento almacenado no puede ser nulo ni estar vacío.", nameof(storeProcedureName));
+
+            try
+            {
+
+                // ✅ Validaciones
+                if (string.IsNullOrWhiteSpace(storeProcedureName))
+                    throw new ArgumentException("...", nameof(storeProcedureName));
+
+                // ✅ Lógica correcta
+                var commandTimeout = timeout ?? DefaultTimeout;
+
+                using var connection = GetConnection();
+                connection.Open();
+
+                using var command = new SqlCommand(storeProcedureName, connection)
+                {
+                    CommandType = CommandType.StoredProcedure,
+                    CommandTimeout = commandTimeout
+                };
+
+                if (parameters != null)
+                    command.Parameters.AddRange(parameters);
+
+
+                using var reader = command.ExecuteReader();
                 using var dataSet = new DataSet();
                 while (!reader.IsClosed)
                 {
