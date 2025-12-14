@@ -89,10 +89,10 @@ public sealed class SqlCommandExecutor : ISqlCommandExecutor
             dataTable.Load(reader);
             dataSet.Tables.Add(dataTable);
 
-            if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
-            {
-                break;
-            }
+            //if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+            //{
+            //    break;
+            //}
         }
 
         return dataSet;
@@ -107,11 +107,6 @@ public sealed class SqlCommandExecutor : ISqlCommandExecutor
             var dataTable = new DataTable();
             dataTable.Load(reader);
             dataSet.Tables.Add(dataTable);
-
-            if (!reader.NextResult())
-            {
-                break;
-            }
         }
 
         return dataSet;
