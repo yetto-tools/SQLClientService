@@ -237,6 +237,10 @@ var parametros = new[]
 var result = await service.ExecuteAsync("sp_MiProcedimiento", parametros);
 ```
 
+> Usando esta librería, el equivalente más corto es `SqlParams.AddParams(("pN1", 1), ("pN2", 0), ("pN3", 0))`
+> (ver "Referencia Rápida - SqlParams" más arriba). Esta sección sigue siendo útil para entender
+> qué pasa "por debajo" o si prefieres `SqlParameter` sin ningún helper.
+
 **✅ Ventajas:**
 - Más simple y directo
 - Menos líneas de código
@@ -290,6 +294,12 @@ var result = await service.ExecuteAsync("sp_MiProcedimiento", new[]
 
 ## 📊 **Ejemplos por Tipo de Dato**
 
+> Todos los tipos de esta sección tienen su equivalente más corto en `SqlParams`
+> (`SqlParams.Int`, `SqlParams.String`, `SqlParams.Decimal`, `SqlParams.DateTime`/`DateTime2`/`Date`,
+> `SqlParams.Bool`, `SqlParams.Guid`, `SqlParams.Binary`), incluyendo la conversión de `null` a
+> `DBNull.Value` automática. Lo de abajo es útil si necesitas un `SqlDbType` que `SqlParams` no
+> cubre todavía (ej: `Xml`, `Time`, `Money`) o si prefieres `SqlParameter` sin ningún helper.
+
 ### **Enteros**
 ```csharp
 new SqlParameter("@Id", 123)
@@ -327,7 +337,9 @@ new SqlParameter("@HasPermission", true) // Se convierte a bit automáticamente
 ### **Valores NULL**
 ```csharp
 new SqlParameter("@OptionalField", SqlDbType.Int) { Value = DBNull.Value }
-new SqlParameter("@NullableDate", SqlDbType.DateTime) { Value = (object?)null ?? DBNull.Value }
+
+DateTime? birthDate = null; // ej: variable opcional que puede o no tener valor
+new SqlParameter("@BirthDate", SqlDbType.DateTime) { Value = (object?)birthDate ?? DBNull.Value }
 ```
 
 ### **Binarios**
@@ -366,6 +378,11 @@ int outputValue = (int)parametros[1].Value;
 int returnValue = (int)parametros[2].Value;
 ```
 
+> Con `SqlParams` es `SqlParams.OutParam("OutputValue", SqlDbType.Int)` /
+> `SqlParams.ReturnParam()`, y en vez de leer `parametros[i].Value` (que revienta si el SP no lo
+> llenó) puedes usar `result.GetOutputValue<int>("OutputValue")`, que devuelve `default` en ese
+> caso — ver la sección de parámetros de salida en `DBSQLClient/README.md`.
+
 ---
 
 ## 🔄 **Parámetros Input/Output**
@@ -386,17 +403,25 @@ int newValue = (int)param.Value; // Valor actualizado por el SP
 
 ## 💡 **Métodos Helper Recomendados**
 
+> **Ya existe en este proyecto:** lo que sigue es el concepto general de por qué conviene un
+> helper así (útil si estás integrando esta idea en OTRO proyecto que no tenga esta librería).
+> Aquí mismo ya tienes `DBSQLClient.Servicio.Parameter.SqlParams` con esto y más (`Max`, `DbNull`,
+> `defaultValue`, tipos específicos, etc.) — no lo reimplementes. Si aun así copias este ejemplo
+> en un proyecto que también use el `SqlParams` real, **no le pongas el mismo nombre**: tu clase
+> lo ocultaría en silencio (sin error de compilación) en cualquier archivo donde ambas queden en
+> el mismo namespace o uno contenedor, por las reglas de precedencia de C# sobre `using`.
+
 ### **Helper Básico**
 
 ```csharp
-public static class SqlParams
+public static class MiSqlHelper
 {
-    public static SqlParameter Param(string name, object value)
+    public static SqlParameter Param(string name, object? value)
     {
         return new SqlParameter(name, value ?? DBNull.Value);
     }
 
-    public static SqlParameter Param(string name, object value, SqlDbType type)
+    public static SqlParameter Param(string name, object? value, SqlDbType type)
     {
         return new SqlParameter(name, type) { Value = value ?? DBNull.Value };
     }
@@ -410,9 +435,9 @@ public static class SqlParams
 // USO
 var parametros = new[]
 {
-    SqlParams.Param("@Id", 123),
-    SqlParams.Param("@Name", "Juan"),
-    SqlParams.OutParam("@Result", SqlDbType.Int)
+    MiSqlHelper.Param("@Id", 123),
+    MiSqlHelper.Param("@Name", "Juan"),
+    MiSqlHelper.OutParam("@Result", SqlDbType.Int)
 };
 ```
 
@@ -580,9 +605,16 @@ new SqlParameter("@LongText", SqlDbType.NVarChar, SqlParams.Max) { Value = longS
 // ❌ INCORRECTO
 new SqlParameter("@OptionalField", null) // Puede causar error
 
-// ✅ CORRECTO
+// 😕 CORRECTO, PERO VERBOSO — repetir esto por cada parámetro opcional cansa
 new SqlParameter("@OptionalField", (object?)value ?? DBNull.Value)
+
+// ✅ MÁS SIMPLE — SqlParams ya hace esta conversión por ti
+SqlParams.Param("OptionalField", value)
 ```
+
+Este es el punto de `SqlParams`: te evita escribir `(object?)value ?? DBNull.Value` a mano en cada
+parámetro. `Param`, `Int`, `String`, `Decimal`, etc. ya convierten `null` a `DBNull.Value`
+automáticamente — para eso existe la librería.
 
 ### **Error 4: Olvidar @ en el nombre**
 ```csharp
