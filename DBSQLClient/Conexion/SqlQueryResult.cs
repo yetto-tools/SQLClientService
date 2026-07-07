@@ -1,6 +1,8 @@
 using System.Data;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using DBSQLClient.Servicio;
 using Microsoft.Data.SqlClient;
 
 namespace DBSQLClient.Conexion;
@@ -22,6 +24,8 @@ public sealed class SqlQueryResult
 
     /// <summary>
     /// Inicializa una nueva instancia a partir de un <see cref="DataSet"/> devuelto por SQL Server.
+    /// Copia el <paramref name="dataSet"/> para que cambios posteriores del llamador sobre el
+    /// original no afecten a esta instancia.
     /// </summary>
     /// <param name="dataSet">Conjunto de datos a encapsular.</param>
     /// <param name="parameters">
@@ -30,8 +34,23 @@ public sealed class SqlQueryResult
     /// <see cref="GetOutputValue{T}"/>.
     /// </param>
     public SqlQueryResult(DataSet dataSet, IEnumerable<SqlParameter>? parameters = null)
+        : this(dataSet, parameters, copyDataSet: true)
     {
-        _dataResult = dataSet?.Copy() ?? new DataSet();
+    }
+
+    /// <summary>
+    /// Crea una instancia a partir de un <see cref="DataSet"/> que nadie más referencia (por ejemplo,
+    /// uno recién construido internamente por <see cref="SqlCommandExecutor"/>), evitando la copia
+    /// defensiva de <see cref="SqlQueryResult(DataSet, IEnumerable{SqlParameter}?)"/>.
+    /// </summary>
+    internal static SqlQueryResult FromOwnedDataSet(DataSet dataSet, IEnumerable<SqlParameter>? parameters = null)
+    {
+        return new SqlQueryResult(dataSet, parameters, copyDataSet: false);
+    }
+
+    private SqlQueryResult(DataSet dataSet, IEnumerable<SqlParameter>? parameters, bool copyDataSet)
+    {
+        _dataResult = copyDataSet ? (dataSet?.Copy() ?? new DataSet()) : (dataSet ?? new DataSet());
         _outputParameters = ExtractOutputParameters(parameters);
     }
 
@@ -132,7 +151,9 @@ public sealed class SqlQueryResult
     {
         var table = AsDataTable();
         var list = new List<T>();
-        var properties = typeof(T).GetProperties();
+        var properties = typeof(T).GetProperties()
+            .Where(p => p.GetCustomAttribute<NotMappedAttribute>() is null)
+            .ToArray();
 
         foreach (DataRow row in table.Rows)
         {

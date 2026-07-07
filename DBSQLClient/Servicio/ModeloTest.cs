@@ -5,6 +5,7 @@ using DBSQLClient.Servicio;
 
 namespace DBSQLClient.Models
 {
+    [Table("Users")]
     public class User
     {
         [PrimaryKey]
@@ -24,8 +25,14 @@ namespace DBSQLClient.Models
 
         [ManyToMany(typeof(Role), typeof(UserRole))]
         public List<Role> Roles { get; set; } = new();
+
+        // Calculada, no viene de la BD: [NotMapped] evita que el mapper intente
+        // asignarle un valor (fallaría igual, al no tener setter).
+        [NotMapped]
+        public string DisplayName => $"{Name} <{Email}>";
     }
 
+    [Table("UserProfiles")]
     public class UserProfile
     {
         [PrimaryKey]
@@ -43,6 +50,7 @@ namespace DBSQLClient.Models
         public DateTime? BirthDate { get; set; }
     }
 
+    [Table("Roles")]
     public class Role
     {
         [PrimaryKey]
@@ -53,6 +61,7 @@ namespace DBSQLClient.Models
         public string Name { get; set; }
     }
 
+    [Table("UserRoles")]
     public class UserRole
     {
         [ForeignKey(typeof(User))]
@@ -64,6 +73,7 @@ namespace DBSQLClient.Models
         public int RoleId { get; set; }
     }
 
+    [Table("Orders")]
     public class Order
     {
         [PrimaryKey]

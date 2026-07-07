@@ -1,5 +1,6 @@
 ﻿#OtherInformation: <Nullable>enable</Nullable>
 []: # OtherInformation: <ImplicitUsings>enable</ImplicitUsings>
+
 ```csharp 
 # Configuración avanzada para formateo salida del JSON (JsonSerializerOptions) 
 # ============================================
@@ -340,6 +341,50 @@ Si tus nombres de propiedad o de claves no siguen la convención de los atributo
 tiene atributos), todos los métodos aceptan los nombres explícitos como parámetros opcionales,
 por ejemplo `result.MapOneToMany<User, Order>("Orders")` o
 `result.MapManyToMany<User, Role, UserRole>("Roles", leftKey: "Id", joinLeftKey: "UserId", joinRightKey: "RoleId")`.
+
+## Origen del modelo: [Table] y [StoredProcedure]
+
+Estos atributos de clase documentan de dónde vienen los datos de un modelo. Por ahora son solo
+metadata (consultable por reflexión vía `MetadataCache`): `SqlClientService.QueryAsync`/`ExecuteAsync`
+siguen recibiendo el nombre de la tabla o del procedimiento como `string`, no lo resuelven todavía
+a partir del atributo.
+
+```csharp
+// El modelo representa filas de una tabla, para lectura directa (SELECT).
+[Table("Users")]
+public class User { /* ... */ }
+
+// El modelo representa el resultado de un procedimiento almacenado específico.
+[StoredProcedure("sp_GetUserOrderTotal")]
+public class UserOrderTotal
+{
+    public int UserId { get; set; }
+    public int TotalOrders { get; set; }
+}
+```
+
+Son mutuamente excluyentes: un modelo no puede tener ambos a la vez. `MetadataCache` lanza
+`InvalidOperationException` si detecta los dos atributos en el mismo tipo.
+
+## Excluir propiedades del mapeo: [NotMapped]
+
+Marca con `[NotMapped]` cualquier propiedad que no venga de la base de datos (por ejemplo, una
+propiedad calculada). Queda completamente fuera del mapeo: no se busca su columna, no participa
+como PK/FK ni en relaciones. Es necesario en propiedades de solo lectura (sin `set`), ya que de
+lo contrario el mapper fallaría al intentar asignarles un valor:
+
+```csharp
+public class User
+{
+    public string Name { get; set; }
+    public string Email { get; set; }
+
+    [NotMapped]
+    public string DisplayName => $"{Name} <{Email}>";
+}
+```
+
+Aplica tanto a `SqlResultMapper` (`MapOneToOne`, `MapOneToMany`, etc.) como a `SqlQueryResult.ToList<T>()`/`FirstOrDefault<T>()`.
 
 ## Procedimientos con parámetros de salida (Output / InputOutput / ReturnValue)
 

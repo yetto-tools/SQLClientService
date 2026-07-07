@@ -31,17 +31,48 @@ namespace DBSQLClient.Servicio.Mapper
                     $"No se definió [ForeignKey] hacia {referenceType.Name} en el modelo {type.Name}");
         }
 
+        internal static string RequireTableName(Type type)
+        {
+            return Get(type).TableName
+                ?? throw new InvalidOperationException(
+                    $"No se definió [Table] en el modelo {type.Name}");
+        }
+
+        internal static string RequireStoredProcedureName(Type type)
+        {
+            return Get(type).StoredProcedureName
+                ?? throw new InvalidOperationException(
+                    $"No se definió [StoredProcedure] en el modelo {type.Name}");
+        }
+
         private static EntityMetadata BuildMetadata(Type type)
         {
+            var tableName = type.GetCustomAttribute<TableAttribute>()?.Name;
+            var storedProcedureName = type.GetCustomAttribute<StoredProcedureAttribute>()?.Name;
+
+            if (tableName is not null && storedProcedureName is not null)
+            {
+                throw new InvalidOperationException(
+                    $"El modelo {type.Name} no puede tener [Table] y [StoredProcedure] a la vez.");
+            }
+
             var metadata = new EntityMetadata
             {
                 EntityType = type,
                 PrimaryKey = type.GetProperties()
-                    .FirstOrDefault(p => p.GetCustomAttribute<PrimaryKeyAttribute>() != null)
+                    .Where(p => p.GetCustomAttribute<NotMappedAttribute>() is null)
+                    .FirstOrDefault(p => p.GetCustomAttribute<PrimaryKeyAttribute>() != null),
+                TableName = tableName,
+                StoredProcedureName = storedProcedureName
             };
 
             foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
+                if (prop.GetCustomAttribute<NotMappedAttribute>() != null)
+                {
+                    continue;
+                }
+
                 var columnName = prop.GetCustomAttribute<ColumnAttribute>()?.Name ?? prop.Name;
                 metadata.Columns[columnName] = prop;
 

@@ -104,12 +104,12 @@ public sealed class SqlClientService : ISQLClientService
     private Task<SqlQueryResult> ExecuteAsync(SqlCommandRequest request)
     {
         return RunSafeAsync(async () =>
-            new SqlQueryResult(await _commandExecutor.ExecuteAsync(request).ConfigureAwait(false), request.Parameters), request);
+            SqlQueryResult.FromOwnedDataSet(await _commandExecutor.ExecuteAsync(request).ConfigureAwait(false), request.Parameters), request);
     }
 
     private SqlQueryResult Execute(SqlCommandRequest request)
     {
-        return RunSafe(() => new SqlQueryResult(_commandExecutor.Execute(request), request.Parameters), request);
+        return RunSafe(() => SqlQueryResult.FromOwnedDataSet(_commandExecutor.Execute(request), request.Parameters), request);
     }
 
     private static SqlCommandRequest BuildRequest(

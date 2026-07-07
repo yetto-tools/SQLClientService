@@ -47,11 +47,17 @@ public sealed class SqlCommandExecutor : ISqlCommandExecutor
         await connection.OpenAsync(request.CancellationToken).ConfigureAwait(false);
 
         using var command = BuildCommand(connection, request);
-        using var reader = await command
-            .ExecuteReaderAsync(request.Behavior, request.CancellationToken)
-            .ConfigureAwait(false);
 
-        return await ReadDataSetAsync(reader, request.CancellationToken).ConfigureAwait(false);
+        DataSet dataSet;
+        using (var reader = await command
+            .ExecuteReaderAsync(request.Behavior, request.CancellationToken)
+            .ConfigureAwait(false))
+        {
+            dataSet = await ReadDataSetAsync(reader, request.CancellationToken).ConfigureAwait(false);
+        }
+
+        CopyOutputParameterValues(command, request.Parameters);
+        return dataSet;
     }
 
     /// <inheritdoc />
@@ -61,9 +67,15 @@ public sealed class SqlCommandExecutor : ISqlCommandExecutor
         connection.Open();
 
         using var command = BuildCommand(connection, request);
-        using var reader = command.ExecuteReader(request.Behavior);
 
-        return ReadDataSet(reader);
+        DataSet dataSet;
+        using (var reader = command.ExecuteReader(request.Behavior))
+        {
+            dataSet = ReadDataSet(reader);
+        }
+
+        CopyOutputParameterValues(command, request.Parameters);
+        return dataSet;
     }
 
     private static SqlCommand BuildCommand(SqlConnection connection, SqlCommandRequest request)
@@ -73,12 +85,37 @@ public sealed class SqlCommandExecutor : ISqlCommandExecutor
         command.CommandType = request.CommandType;
         command.CommandTimeout = request.Timeout;
 
-        if (request.Parameters.Length > 0)
+        // Se clonan los parámetros: un SqlParameter solo puede pertenecer a un
+        // SqlParameterCollection a la vez, así que agregar las instancias originales
+        // impediría reusar el mismo SqlParameter[] en una segunda ejecución.
+        foreach (var parameter in request.Parameters)
         {
-            command.Parameters.AddRange(request.Parameters);
+            command.Parameters.Add(((ICloneable)parameter).Clone());
         }
 
         return command;
+    }
+
+    /// <summary>
+    /// Copia el valor de los parámetros Output/InputOutput/ReturnValue desde los clones
+    /// usados en la ejecución hacia los objetos originales que conserva el llamador.
+    /// Debe llamarse después de cerrar el <see cref="SqlDataReader"/>: ADO.NET no rellena
+    /// estos valores hasta ese momento.
+    /// </summary>
+    private static void CopyOutputParameterValues(SqlCommand command, SqlParameter[] originalParameters)
+    {
+        foreach (var original in originalParameters)
+        {
+            if (original.Direction == ParameterDirection.Input)
+            {
+                continue;
+            }
+
+            if (command.Parameters.Contains(original.ParameterName))
+            {
+                original.Value = command.Parameters[original.ParameterName].Value;
+            }
+        }
     }
 
     private static async Task<DataSet> ReadDataSetAsync(SqlDataReader reader, CancellationToken cancellationToken)
