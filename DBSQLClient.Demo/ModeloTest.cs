@@ -1,9 +1,6 @@
-﻿
 using DBSQLClient.Servicio;
 
-
-
-namespace DBSQLClient.Models
+namespace DBSQLClient.Demo.Models
 {
     [Table("Users")]
     public class User

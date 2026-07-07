@@ -1,22 +1,27 @@
-﻿
 using System.Data;
 using DBSQLClient.Conexion;
+using DBSQLClient.Demo.Models;
 using DBSQLClient.Helpers;
-using DBSQLClient.Models;
 using DBSQLClient.Servicio;
 using DBSQLClient.Servicio.Mapper.RelationsMapper;
 using DBSQLClient.Servicio.Parameter;
 
-namespace DBSQLClient { 
+namespace DBSQLClient.Demo {
 
+    /// <summary>
+    /// Clase principal del programa que demuestra el uso de la biblioteca DBSQLClient para interactuar con SQL Server.
+    /// </summary>
     public static class Program
     {
+        /// <summary>
+        /// Punto de entrada principal del programa.
+        /// </summary>
         public static void Main()
         {
             var connectionString = "Data Source=(localdb)\\MSSQLLocalDB;Database=DB_TEST;Integrated Security=True;Persist Security Info=False;Pooling=True;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=5000";
 
             var db = new SqlClientService(connectionString);
-            
+
             Task.Run(async () => {
                 var result = await db.ExecuteAsync(
                     "sp_User_With_Profile",
@@ -65,7 +70,7 @@ namespace DBSQLClient {
                 Console.WriteLine($"TOTAL ORDERS (output param): {totalOrders}");
             })
                 .GetAwaiter()
-                .GetResult(); 
+                .GetResult();
         }
     }
 

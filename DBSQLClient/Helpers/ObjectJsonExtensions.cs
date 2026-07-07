@@ -6,7 +6,9 @@ using System.Text.Json.Serialization;
 
 namespace DBSQLClient.Helpers
 {
-    
+    /// <summary>
+    /// Proporciona métodos de extensión para serializar objetos a JSON y crear documentos JSON.
+    /// </summary>
     public static class ObjectJsonExtensions
     {
         private static readonly JsonSerializerOptions _options = new()
