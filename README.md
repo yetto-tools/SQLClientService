@@ -3,7 +3,7 @@
 ## 🎯 Cheat Sheet
 
 ```csharp
-using DBSQLClient.Helpers;
+using DBSQLClient.Servicio.Parameter;
 ```
 
 ---
@@ -84,6 +84,7 @@ SqlParams.DbNull(name, type, size)
 SqlParams.AddParams((name, value), ...)
 SqlParams.FromDictionary(dict)
 SqlParams.FromObject(obj)
+new SqlParameterBuilder().AddRange(parametrosYaConstruidos)
 ```
 
 ### Obtener Valores
@@ -101,6 +102,7 @@ var parametros = new SqlParameterBuilder()
     .AddString("Name", "Juan")
     .AddDecimal("Price", 99.99m)
     .AddOutput("Result", SqlDbType.Int)
+    .AddRange(SqlParams.AddParams(("Extra", "valor")))  // combina parametros ya construidos
     .Build();
 ```
 
@@ -190,7 +192,7 @@ new SqlParameterBuilder().AddDbNull("Optional", SqlDbType.Int).Build();
 
 ### 2. Agrega using
 ```csharp
-using DBSQLClient.Helpers;
+using DBSQLClient.Servicio.Parameter;
 ```
 
 ### 3. Usa en tu código
@@ -448,6 +450,24 @@ var parametros = new[]
 };
 ```
 
+> **Más simple:** para este caso concreto no hace falta ningún `new SqlParameter` — el
+> `SqlParameterBuilder` ya incluido cubre size, precisión/escala y output con sus propios métodos:
+> ```csharp
+> var parametros = new SqlParameterBuilder()
+>     .AddString("Name", "Juan", 100)
+>     .AddDecimal("Price", 99.99m)     // precision=18, scale=2 por defecto
+>     .AddOutput("Result", SqlDbType.Int)
+>     .Build();
+> ```
+> Y si ya tienes parámetros construidos por otro lado (ej: `SqlParams.AddParams(...)`), `AddRange`
+> los combina en la misma cadena sin volver a escribirlos:
+> ```csharp
+> var parametros = new SqlParameterBuilder()
+>     .AddRange(SqlParams.AddParams(("Id", 1), ("Name", "Juan")))
+>     .AddOutput("Result", SqlDbType.Int)
+>     .Build();
+> ```
+
 ---
 
 ## 📝 **Ejemplos Completos de Uso**
@@ -566,10 +586,17 @@ new SqlParameter("@OptionalField", (object?)value ?? DBNull.Value)
 
 ### **Error 4: Olvidar @ en el nombre**
 ```csharp
-// ✅ AMBOS SON VÁLIDOS
+// ✅ AMBOS SON VÁLIDOS con este servicio
 new SqlParameter("@UserId", 123)  // Con @
-new SqlParameter("UserId", 123)   // Sin @ (se agrega automáticamente)
+new SqlParameter("UserId", 123)   // Sin @
 ```
+
+`SqlParameter` de Microsoft **no** agrega el `@` por sí sola — si ejecutaras este parámetro con
+`SqlCommand` puro y olvidaras el `@`, fallaría en tiempo de ejecución (el nombre no coincidiría
+con `@UserId` en tu SQL o procedimiento almacenado). Este servicio lo maneja internamente: tanto
+`SqlParams.Param`/`Int`/`String`/etc. como `SqlCommandExecutor` (el punto por el que pasa *toda*
+ejecución, incluyendo `SqlParameter` armados a mano) normalizan el nombre agregando el `@` si
+falta, antes de mandarlo a SQL Server. No necesitas acordarte de ponerlo.
 
 ---
 

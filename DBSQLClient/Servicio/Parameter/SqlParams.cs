@@ -1,7 +1,7 @@
 using System.Data;
 using Microsoft.Data.SqlClient;
 
-namespace DBSQLClient.Helpers
+namespace DBSQLClient.Servicio.Parameter
 {
     /// <summary>
     /// Describe un parámetro SQL: nombre, valor y, opcionalmente, su <see cref="SqlDbType"/> y tamaño.
@@ -68,7 +68,7 @@ namespace DBSQLClient.Helpers
     /// (simples, tipados, de salida) o arreglos completos desde tuplas, diccionarios u objetos.
     /// No contiene nada ajeno a parámetros SQL — para utilidades genéricas no relacionadas con SQL
     /// (ej: serialización JSON) usa las clases en <c>DBSQLClient.Helpers</c> específicas de ese dominio,
-    /// como <see cref="ObjectJsonExtensions"/>.
+    /// como <see cref="DBSQLClient.Helpers.ObjectJsonExtensions"/>.
     /// </summary>
     public static class SqlParams
     {
@@ -329,9 +329,11 @@ namespace DBSQLClient.Helpers
         #endregion
 
         /// <summary>
-        /// Normaliza el nombre del parámetro agregando @ si no lo tiene.
+        /// Normaliza el nombre del parámetro agregando '@' si no lo tiene. También la usa
+        /// <see cref="Conexion.SqlCommandExecutor"/> como red de seguridad para parámetros
+        /// construidos a mano con <c>new SqlParameter(...)</c> sin pasar por esta clase.
         /// </summary>
-        private static string NormalizeName(string name)
+        internal static string NormalizeName(string name)
         {
             return name.StartsWith("@") ? name : $"@{name}";
         }
@@ -395,6 +397,29 @@ namespace DBSQLClient.Helpers
     public class SqlParameterBuilder
     {
         private readonly List<SqlParameter> _parameters = new();
+
+        /// <summary>
+        /// Agrega uno o más parámetros ya construidos (ej: desde <see cref="SqlParams"/>,
+        /// <see cref="SqlParameterExtensions"/>, u otro arreglo/colección), para combinarlos
+        /// en la misma cadena con los demás métodos <c>Add*</c> del builder.
+        /// </summary>
+        /// <example>
+        /// <c>new SqlParameterBuilder().AddRange(SqlParams.AddParams(("Id", 1))).AddOutput("Result", SqlDbType.Int).Build()</c>
+        /// </example>
+        public SqlParameterBuilder AddRange(params SqlParameter[] parameters)
+        {
+            _parameters.AddRange(parameters);
+            return this;
+        }
+
+        /// <summary>
+        /// Agrega uno o más parámetros ya construidos desde cualquier colección enumerable.
+        /// </summary>
+        public SqlParameterBuilder AddRange(IEnumerable<SqlParameter> parameters)
+        {
+            _parameters.AddRange(parameters);
+            return this;
+        }
 
         /// <summary>
         /// Agrega un parámetro de entrada.

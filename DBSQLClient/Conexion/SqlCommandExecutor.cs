@@ -1,4 +1,5 @@
 using System.Data;
+using DBSQLClient.Servicio.Parameter;
 using Microsoft.Data.SqlClient;
 
 namespace DBSQLClient.Conexion;
@@ -88,9 +89,14 @@ public sealed class SqlCommandExecutor : ISqlCommandExecutor
         // Se clonan los parámetros: un SqlParameter solo puede pertenecer a un
         // SqlParameterCollection a la vez, así que agregar las instancias originales
         // impediría reusar el mismo SqlParameter[] en una segunda ejecución.
+        // También se normaliza el nombre (agregando '@' si falta) como red de seguridad
+        // para parámetros creados a mano con `new SqlParameter(...)` sin pasar por SqlParams,
+        // ya que SqlParameter de Microsoft NO agrega el '@' por sí solo.
         foreach (var parameter in request.Parameters)
         {
-            command.Parameters.Add(((ICloneable)parameter).Clone());
+            var clone = (SqlParameter)((ICloneable)parameter).Clone();
+            clone.ParameterName = SqlParams.NormalizeName(clone.ParameterName);
+            command.Parameters.Add(clone);
         }
 
         return command;
@@ -111,9 +117,10 @@ public sealed class SqlCommandExecutor : ISqlCommandExecutor
                 continue;
             }
 
-            if (command.Parameters.Contains(original.ParameterName))
+            var normalizedName = SqlParams.NormalizeName(original.ParameterName);
+            if (command.Parameters.Contains(normalizedName))
             {
-                original.Value = command.Parameters[original.ParameterName].Value;
+                original.Value = command.Parameters[normalizedName].Value;
             }
         }
     }

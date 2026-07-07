@@ -5,6 +5,7 @@ using DBSQLClient.Helpers;
 using DBSQLClient.Models;
 using DBSQLClient.Servicio;
 using DBSQLClient.Servicio.Mapper.RelationsMapper;
+using DBSQLClient.Servicio.Parameter;
 
 namespace DBSQLClient { 
 
