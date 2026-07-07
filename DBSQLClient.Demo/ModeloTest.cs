@@ -10,12 +10,12 @@ namespace DBSQLClient.Demo.Models
         public int Id { get; set; }
 
         [Column("user_name")]
-        public string Name { get; set; }
+        public string Name { get; set; } = null!;
 
-        public string Email { get; set; }
+        public string Email { get; set; } = null!;
 
         [OneToOne(typeof(UserProfile))]
-        public UserProfile Profile { get; set; }
+        public UserProfile Profile { get; set; } = null!;
 
         [OneToMany(typeof(Order))]
         public List<Order> Orders { get; set; } = new();
@@ -41,7 +41,7 @@ namespace DBSQLClient.Demo.Models
         public int UserId { get; set; }
 
         [Column("bio")]
-        public string Bio { get; set; }
+        public string Bio { get; set; } = null!;
 
         [Column("birth_date")]
         public DateTime? BirthDate { get; set; }
@@ -55,7 +55,7 @@ namespace DBSQLClient.Demo.Models
         public int Id { get; set; }
 
         [Column("role_name")]
-        public string Name { get; set; }
+        public string Name { get; set; } = null!;
     }
 
     [Table("UserRoles")]
@@ -86,6 +86,6 @@ namespace DBSQLClient.Demo.Models
         public DateTime OrderDate { get; set; }
 
         [ManyToOne(typeof(User))]
-        public User User { get; set; }
+        public User User { get; set; } = null!;
     }
 }
