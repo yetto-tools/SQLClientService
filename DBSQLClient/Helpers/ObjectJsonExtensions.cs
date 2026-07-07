@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace DBSQLClient.Helpers
 {
+    
     public static class ObjectJsonExtensions
     {
         private static readonly JsonSerializerOptions _options = new()

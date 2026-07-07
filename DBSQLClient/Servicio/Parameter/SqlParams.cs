@@ -72,6 +72,13 @@ namespace DBSQLClient.Helpers
     /// </summary>
     public static class SqlParams
     {
+        /// <summary>
+        /// Tamaño para tipos de longitud variable sin límite explícito
+        /// (ej: <c>NVARCHAR(MAX)</c>, <c>VARBINARY(MAX)</c>). Reemplaza al -1 "mágico"
+        /// que espera <see cref="SqlParameter.Size"/> para ese caso.
+        /// </summary>
+        public const int Max = -1;
+
         #region Parámetros individuales
 
         /// <summary>
@@ -168,29 +175,33 @@ namespace DBSQLClient.Helpers
         #region Parámetros por tipo específico
 
         /// <summary>
-        /// Crea un parámetro de tipo entero.
+        /// Crea un parámetro de tipo entero. Si <paramref name="value"/> es nulo, se usa
+        /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
-        public static SqlParameter Int(string name, int? value)
+        public static SqlParameter Int(string name, int? value, int? defaultValue = null)
         {
-            return new SqlParameter(NormalizeName(name), SqlDbType.Int) { Value = (object?)value ?? DBNull.Value };
+            return new SqlParameter(NormalizeName(name), SqlDbType.Int) { Value = (object?)(value ?? defaultValue) ?? DBNull.Value };
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo string (NVARCHAR).
+        /// Crea un parámetro de tipo string (NVARCHAR). Usa <see cref="Max"/> (por defecto)
+        /// para <c>NVARCHAR(MAX)</c>. Si <paramref name="value"/> es nulo, se usa
+        /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
-        public static SqlParameter String(string name, string? value, int size = -1)
+        public static SqlParameter String(string name, string? value, int size = Max, string? defaultValue = null)
         {
-            return new SqlParameter(NormalizeName(name), SqlDbType.NVarChar, size) { Value = (object?)value ?? DBNull.Value };
+            return new SqlParameter(NormalizeName(name), SqlDbType.NVarChar, size) { Value = (object?)(value ?? defaultValue) ?? DBNull.Value };
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo decimal.
+        /// Crea un parámetro de tipo decimal. Si <paramref name="value"/> es nulo, se usa
+        /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
-        public static SqlParameter Decimal(string name, decimal? value, byte precision = 18, byte scale = 2)
+        public static SqlParameter Decimal(string name, decimal? value, byte precision = 18, byte scale = 2, decimal? defaultValue = null)
         {
             var param = new SqlParameter(NormalizeName(name), SqlDbType.Decimal)
             {
-                Value = (object?)value ?? DBNull.Value,
+                Value = (object?)(value ?? defaultValue) ?? DBNull.Value,
                 Precision = precision,
                 Scale = scale
             };
@@ -198,51 +209,80 @@ namespace DBSQLClient.Helpers
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo DateTime.
+        /// Crea un parámetro de tipo DateTime. Si <paramref name="value"/> es nulo, se usa
+        /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
-        public static SqlParameter DateTime(string name, DateTime? value)
+        public static SqlParameter DateTime(string name, DateTime? value, DateTime? defaultValue = null)
         {
-            return new SqlParameter(NormalizeName(name), SqlDbType.DateTime) { Value = (object?)value ?? DBNull.Value };
+            return new SqlParameter(NormalizeName(name), SqlDbType.DateTime) { Value = (object?)(value ?? defaultValue) ?? DBNull.Value };
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo DateTime2 (mayor precisión).
+        /// Crea un parámetro de tipo DateTime2 (mayor precisión). Si <paramref name="value"/> es nulo,
+        /// se usa <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
-        public static SqlParameter DateTime2(string name, DateTime? value)
+        public static SqlParameter DateTime2(string name, DateTime? value, DateTime? defaultValue = null)
         {
-            return new SqlParameter(NormalizeName(name), SqlDbType.DateTime2) { Value = (object?)value ?? DBNull.Value };
+            return new SqlParameter(NormalizeName(name), SqlDbType.DateTime2) { Value = (object?)(value ?? defaultValue) ?? DBNull.Value };
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo Date (solo fecha).
+        /// Crea un parámetro de tipo Date (solo fecha). Si <paramref name="value"/> es nulo, se usa
+        /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
-        public static SqlParameter Date(string name, DateTime? value)
+        public static SqlParameter Date(string name, DateTime? value, DateTime? defaultValue = null)
         {
-            return new SqlParameter(NormalizeName(name), SqlDbType.Date) { Value = (object?)value ?? DBNull.Value };
+            return new SqlParameter(NormalizeName(name), SqlDbType.Date) { Value = (object?)(value ?? defaultValue) ?? DBNull.Value };
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo booleano (Bit).
+        /// Crea un parámetro de tipo booleano (Bit). Si <paramref name="value"/> es nulo, se usa
+        /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
-        public static SqlParameter Bool(string name, bool? value)
+        public static SqlParameter Bool(string name, bool? value, bool? defaultValue = null)
         {
-            return new SqlParameter(NormalizeName(name), SqlDbType.Bit) { Value = (object?)value ?? DBNull.Value };
+            return new SqlParameter(NormalizeName(name), SqlDbType.Bit) { Value = (object?)(value ?? defaultValue) ?? DBNull.Value };
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo GUID.
+        /// Crea un parámetro de tipo GUID. Si <paramref name="value"/> es nulo, se usa
+        /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
-        public static SqlParameter Guid(string name, Guid? value)
+        public static SqlParameter Guid(string name, Guid? value, Guid? defaultValue = null)
         {
-            return new SqlParameter(NormalizeName(name), SqlDbType.UniqueIdentifier) { Value = (object?)value ?? DBNull.Value };
+            return new SqlParameter(NormalizeName(name), SqlDbType.UniqueIdentifier) { Value = (object?)(value ?? defaultValue) ?? DBNull.Value };
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo binario (VarBinary).
+        /// Crea un parámetro de tipo binario (VarBinary(MAX)). Si <paramref name="value"/> es nulo,
+        /// se usa <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
-        public static SqlParameter Binary(string name, byte[]? value)
+        public static SqlParameter Binary(string name, byte[]? value, byte[]? defaultValue = null)
         {
-            return new SqlParameter(NormalizeName(name), SqlDbType.VarBinary, -1) { Value = (object?)value ?? DBNull.Value };
+            return new SqlParameter(NormalizeName(name), SqlDbType.VarBinary, Max) { Value = (object?)(value ?? defaultValue) ?? DBNull.Value };
+        }
+
+        #endregion
+
+        #region Valores nulos explícitos
+
+        /// <summary>
+        /// Crea un parámetro explícitamente NULL (<see cref="DBNull.Value"/>) del tipo SQL indicado.
+        /// Útil para dejar claro en el código que el valor es intencionalmente nulo, en vez de
+        /// depender de que <c>value</c> termine siendo nulo en alguno de los métodos anteriores.
+        /// </summary>
+        /// <example><c>SqlParams.DbNull("MiddleName", SqlDbType.NVarChar)</c></example>
+        public static SqlParameter DbNull(string name, SqlDbType type)
+        {
+            return new SqlParameter(NormalizeName(name), type) { Value = DBNull.Value };
+        }
+
+        /// <summary>
+        /// Crea un parámetro explícitamente NULL con tamaño, para tipos de longitud variable.
+        /// </summary>
+        public static SqlParameter DbNull(string name, SqlDbType type, int size)
+        {
+            return new SqlParameter(NormalizeName(name), type, size) { Value = DBNull.Value };
         }
 
         #endregion
@@ -377,7 +417,7 @@ namespace DBSQLClient.Helpers
         /// <summary>
         /// Agrega un parámetro de tipo string.
         /// </summary>
-        public SqlParameterBuilder AddString(string name, string? value, int size = -1)
+        public SqlParameterBuilder AddString(string name, string? value, int size = SqlParams.Max)
         {
             _parameters.Add(SqlParams.String(name, value, size));
             return this;
@@ -416,6 +456,15 @@ namespace DBSQLClient.Helpers
         public SqlParameterBuilder AddBool(string name, bool? value)
         {
             _parameters.Add(SqlParams.Bool(name, value));
+            return this;
+        }
+
+        /// <summary>
+        /// Agrega un parámetro explícitamente NULL del tipo indicado.
+        /// </summary>
+        public SqlParameterBuilder AddDbNull(string name, SqlDbType type)
+        {
+            _parameters.Add(SqlParams.DbNull(name, type));
             return this;
         }
 
