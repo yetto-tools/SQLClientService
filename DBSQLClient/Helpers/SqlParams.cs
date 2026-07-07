@@ -1,21 +1,84 @@
-﻿using System.Data;
+using System.Data;
 using Microsoft.Data.SqlClient;
 
 namespace DBSQLClient.Helpers
 {
     /// <summary>
-    /// Helper para crear parámetros SQL de forma simplificada.
+    /// Describe un parámetro SQL: nombre, valor y, opcionalmente, su <see cref="SqlDbType"/> y tamaño.
+    /// Se puede escribir como tupla <c>(nombre, valor)</c> cuando el tipo se infiere del valor,
+    /// <c>(nombre, valor, tipo)</c> cuando hace falta ser explícito (ej: <see cref="SqlDbType.Xml"/>),
+    /// o <c>(nombre, valor, tipo, tamaño)</c> para tipos de longitud variable (ej: <see cref="SqlDbType.NVarChar"/>).
     /// </summary>
-    public static class SqlHelper
+    public readonly struct SqlParamSpec
     {
-        #region Métodos Básicos de Creación
+        /// <summary>
+        /// Nombre del parámetro SQL, incluyendo el prefijo '@'.
+        /// </summary>
+        public string Name { get; }
 
         /// <summary>
-        /// Crea un parámetro SQL con nombre y valor.
+        /// Valor del parámetro SQL. Puede ser nulo si el parámetro es de salida o si se desea pasar un valor nulo.
+        /// </summary>
+        public object? Value { get; }
+
+        /// <summary>
+        /// Tipo de dato SQL del parámetro. Si es nulo, se infiere del valor. Se recomienda especificarlo
+        /// para tipos como XML o cuando se requiere un tamaño específico.
+        /// </summary>
+        public SqlDbType? Type { get; }
+
+        /// <summary>
+        /// Tamaño del parámetro SQL. Solo aplica para tipos de longitud variable (ej: <see cref="SqlDbType.NVarChar"/>).
+        /// Si es nulo, se infiere del valor o se usa el tamaño por defecto del tipo.
+        /// </summary>
+        public int? Size { get; }
+
+        /// <summary>
+        /// Crea un nuevo parámetro SQL con nombre, valor y opcionalmente tipo y tamaño.
+        /// </summary>
+        public SqlParamSpec(string name, object? value, SqlDbType? type = null, int? size = null)
+        {
+            Name = name;
+            Value = value;
+            Type = type;
+            Size = size;
+        }
+
+        /// <summary>
+        /// Permite crear un <see cref="SqlParamSpec"/> a partir de una tupla (nombre, valor), infiriendo el tipo.
+        /// </summary>
+        public static implicit operator SqlParamSpec((string name, object? value) tuple) =>
+            new(tuple.name, tuple.value);
+
+        /// <summary>
+        /// Permite crear un <see cref="SqlParamSpec"/> a partir de una tupla (nombre, valor, tipo).
+        /// </summary>
+        public static implicit operator SqlParamSpec((string name, object? value, SqlDbType type) tuple) =>
+            new(tuple.name, tuple.value, tuple.type);
+
+        /// <summary>
+        /// Permite crear un <see cref="SqlParamSpec"/> a partir de una tupla (nombre, valor, tipo, tamaño).
+        /// </summary>
+        public static implicit operator SqlParamSpec((string name, object? value, SqlDbType type, int size) tuple) =>
+            new(tuple.name, tuple.value, tuple.type, tuple.size);
+    }
+
+    /// <summary>
+    /// Único punto de entrada para construir <see cref="SqlParameter"/>: parámetros individuales
+    /// (simples, tipados, de salida) o arreglos completos desde tuplas, diccionarios u objetos.
+    /// No contiene nada ajeno a parámetros SQL — para utilidades genéricas no relacionadas con SQL
+    /// (ej: serialización JSON) usa las clases en <c>DBSQLClient.Helpers</c> específicas de ese dominio,
+    /// como <see cref="ObjectJsonExtensions"/>.
+    /// </summary>
+    public static class SqlParams
+    {
+        #region Parámetros individuales
+
+        /// <summary>
+        /// Crea un parámetro SQL con nombre y valor, infiriendo el tipo.
         /// </summary>
         /// <param name="name">Nombre del parámetro (con o sin @).</param>
         /// <param name="value">Valor del parámetro.</param>
-        /// <returns>SqlParameter configurado.</returns>
         public static SqlParameter Param(string name, object? value)
         {
             return new SqlParameter(NormalizeName(name), value ?? DBNull.Value);
@@ -39,7 +102,7 @@ namespace DBSQLClient.Helpers
 
         #endregion
 
-        #region Parámetros de Salida
+        #region Parámetros de salida
 
         /// <summary>
         /// Crea un parámetro de salida (Output).
@@ -86,9 +149,23 @@ namespace DBSQLClient.Helpers
             };
         }
 
+        /// <summary>
+        /// Obtiene el valor de un parámetro de salida de forma segura.
+        /// Si ya ejecutaste el comando a través de <see cref="Conexion.SqlClientService"/>, prefiere
+        /// <c>SqlQueryResult.GetOutputValue&lt;T&gt;(name)</c>, que no requiere conservar la referencia
+        /// al <see cref="SqlParameter"/> original.
+        /// </summary>
+        public static T? GetOutputValue<T>(SqlParameter parameter)
+        {
+            if (parameter.Value == null || parameter.Value == DBNull.Value)
+                return default;
+
+            return (T)parameter.Value;
+        }
+
         #endregion
 
-        #region Parámetros por Tipo Específico
+        #region Parámetros por tipo específico
 
         /// <summary>
         /// Crea un parámetro de tipo entero.
@@ -170,14 +247,26 @@ namespace DBSQLClient.Helpers
 
         #endregion
 
-        #region Métodos de Conveniencia
+        #region Arreglos de parámetros
 
         /// <summary>
-        /// Crea múltiples parámetros desde tuplas (nombre, valor).
+        /// Crea un arreglo de parámetros SQL. El tipo (<see cref="SqlDbType"/>) y el tamaño son
+        /// opcionales por parámetro: sin ellos se infieren del valor; con ellos, se fuerzan
+        /// (necesario para casos como XML o cadenas de longitud específica).
         /// </summary>
-        public static SqlParameter[] Params(params (string name, object? value)[] parameters)
+        /// <example>
+        /// <c>SqlParams.AddParams(("UserId", 1), ("Name", "asdfsadf", SqlDbType.NVarChar, 150))</c>
+        /// </example>
+        public static SqlParameter[] AddParams(params SqlParamSpec[] parameters)
         {
-            return parameters.Select(p => Param(p.name, p.value)).ToArray();
+            return parameters
+                .Select(p => (p.Type, p.Size) switch
+                {
+                    ({ } type, { } size) => Param(p.Name, p.Value, type, size),
+                    ({ } type, null) => Param(p.Name, p.Value, type),
+                    _ => Param(p.Name, p.Value)
+                })
+                .ToArray();
         }
 
         /// <summary>
@@ -199,8 +288,6 @@ namespace DBSQLClient.Helpers
 
         #endregion
 
-        #region Métodos Auxiliares
-
         /// <summary>
         /// Normaliza el nombre del parámetro agregando @ si no lo tiene.
         /// </summary>
@@ -208,25 +295,10 @@ namespace DBSQLClient.Helpers
         {
             return name.StartsWith("@") ? name : $"@{name}";
         }
-
-        /// <summary>
-        /// Obtiene el valor de un parámetro de salida de forma segura.
-        /// </summary>
-        public static T? GetOutputValue<T>(SqlParameter parameter)
-        {
-            if (parameter.Value == null || parameter.Value == DBNull.Value)
-                return default;
-
-            return (T)parameter.Value;
-        }
-
-        #endregion
     }
 
-    #region Extension Methods (Opcional)
-
     /// <summary>
-    /// Métodos de extensión para SqlParameter.
+    /// Métodos de extensión para configurar un <see cref="SqlParameter"/> ya creado.
     /// </summary>
     public static class SqlParameterExtensions
     {
@@ -277,10 +349,6 @@ namespace DBSQLClient.Helpers
         }
     }
 
-    #endregion
-
-    #region Fluent Builder (Opcional)
-
     /// <summary>
     /// Builder para crear múltiples parámetros de forma fluida.
     /// </summary>
@@ -293,7 +361,7 @@ namespace DBSQLClient.Helpers
         /// </summary>
         public SqlParameterBuilder Add(string name, object? value)
         {
-            _parameters.Add(SqlHelper.Param(name, value));
+            _parameters.Add(SqlParams.Param(name, value));
             return this;
         }
 
@@ -302,7 +370,7 @@ namespace DBSQLClient.Helpers
         /// </summary>
         public SqlParameterBuilder Add(string name, object? value, SqlDbType type)
         {
-            _parameters.Add(SqlHelper.Param(name, value, type));
+            _parameters.Add(SqlParams.Param(name, value, type));
             return this;
         }
 
@@ -311,7 +379,7 @@ namespace DBSQLClient.Helpers
         /// </summary>
         public SqlParameterBuilder AddString(string name, string? value, int size = -1)
         {
-            _parameters.Add(SqlHelper.String(name, value, size));
+            _parameters.Add(SqlParams.String(name, value, size));
             return this;
         }
 
@@ -320,7 +388,7 @@ namespace DBSQLClient.Helpers
         /// </summary>
         public SqlParameterBuilder AddInt(string name, int? value)
         {
-            _parameters.Add(SqlHelper.Int(name, value));
+            _parameters.Add(SqlParams.Int(name, value));
             return this;
         }
 
@@ -329,7 +397,7 @@ namespace DBSQLClient.Helpers
         /// </summary>
         public SqlParameterBuilder AddDecimal(string name, decimal? value, byte precision = 18, byte scale = 2)
         {
-            _parameters.Add(SqlHelper.Decimal(name, value, precision, scale));
+            _parameters.Add(SqlParams.Decimal(name, value, precision, scale));
             return this;
         }
 
@@ -338,7 +406,7 @@ namespace DBSQLClient.Helpers
         /// </summary>
         public SqlParameterBuilder AddDateTime(string name, DateTime? value)
         {
-            _parameters.Add(SqlHelper.DateTime(name, value));
+            _parameters.Add(SqlParams.DateTime(name, value));
             return this;
         }
 
@@ -347,7 +415,7 @@ namespace DBSQLClient.Helpers
         /// </summary>
         public SqlParameterBuilder AddBool(string name, bool? value)
         {
-            _parameters.Add(SqlHelper.Bool(name, value));
+            _parameters.Add(SqlParams.Bool(name, value));
             return this;
         }
 
@@ -356,7 +424,7 @@ namespace DBSQLClient.Helpers
         /// </summary>
         public SqlParameterBuilder AddOutput(string name, SqlDbType type)
         {
-            _parameters.Add(SqlHelper.OutParam(name, type));
+            _parameters.Add(SqlParams.OutParam(name, type));
             return this;
         }
 
@@ -365,7 +433,7 @@ namespace DBSQLClient.Helpers
         /// </summary>
         public SqlParameterBuilder AddInputOutput(string name, object? value, SqlDbType type)
         {
-            _parameters.Add(SqlHelper.InOutParam(name, value, type));
+            _parameters.Add(SqlParams.InOutParam(name, value, type));
             return this;
         }
 
@@ -385,9 +453,4 @@ namespace DBSQLClient.Helpers
             return builder.Build();
         }
     }
-
-    #endregion
-
 }
-
-

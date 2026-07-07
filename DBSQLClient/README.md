@@ -340,3 +340,28 @@ Si tus nombres de propiedad o de claves no siguen la convención de los atributo
 tiene atributos), todos los métodos aceptan los nombres explícitos como parámetros opcionales,
 por ejemplo `result.MapOneToMany<User, Order>("Orders")` o
 `result.MapManyToMany<User, Role, UserRole>("Roles", leftKey: "Id", joinLeftKey: "UserId", joinRightKey: "RoleId")`.
+
+## Procedimientos con parámetros de salida (Output / InputOutput / ReturnValue)
+
+Los parámetros creados con `SqlParams.OutParam`, `SqlParams.InOutParam` o `SqlParams.ReturnParam`
+se combinan con los de entrada en el mismo arreglo. Después de ejecutar, el valor de salida se lee
+desde el resultado (`SqlQueryResult`), no desde la variable original del parámetro:
+
+```csharp
+var parameters = SqlParams.AddParams(("UserId", 1))
+    .Append(SqlParams.OutParam("TotalOrders", SqlDbType.Int))
+    .ToArray();
+
+var result = await db.ExecuteAsync("sp_GetUserOrderTotal", parameters);
+
+var total = result.GetOutputValue<int>("TotalOrders"); // funciona con o sin "@"
+bool huboSalida = result.HasOutputParameters;
+foreach (var (name, value) in result.OutputParameters)
+{
+    Console.WriteLine($"{name} = {value}");
+}
+```
+
+Esto funciona igual para `QueryAsync`/`ExecuteAsync` (async) y `Query`/`Execute` (sync). Si el
+procedimiento no asigna un valor a un parámetro de salida, `GetOutputValue<T>` devuelve el valor
+por defecto de `T` en vez de lanzar una excepción.

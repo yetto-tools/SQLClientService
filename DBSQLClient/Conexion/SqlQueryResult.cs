@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Data.SqlClient;
 
 namespace DBSQLClient.Conexion;
 
@@ -10,6 +11,7 @@ namespace DBSQLClient.Conexion;
 public sealed class SqlQueryResult
 {
     private readonly DataSet _dataResult;
+    private readonly Dictionary<string, object?> _outputParameters;
     private static readonly JsonSerializerOptions DefaultJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -22,9 +24,65 @@ public sealed class SqlQueryResult
     /// Inicializa una nueva instancia a partir de un <see cref="DataSet"/> devuelto por SQL Server.
     /// </summary>
     /// <param name="dataSet">Conjunto de datos a encapsular.</param>
-    public SqlQueryResult(DataSet dataSet)
+    /// <param name="parameters">
+    /// Parámetros usados en la ejecución. Los que tengan dirección Output, InputOutput o
+    /// ReturnValue quedan disponibles a través de <see cref="OutputParameters"/> y
+    /// <see cref="GetOutputValue{T}"/>.
+    /// </param>
+    public SqlQueryResult(DataSet dataSet, IEnumerable<SqlParameter>? parameters = null)
     {
         _dataResult = dataSet?.Copy() ?? new DataSet();
+        _outputParameters = ExtractOutputParameters(parameters);
+    }
+
+    private static Dictionary<string, object?> ExtractOutputParameters(IEnumerable<SqlParameter>? parameters)
+    {
+        var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        if (parameters is null)
+        {
+            return result;
+        }
+
+        foreach (var parameter in parameters)
+        {
+            if (parameter.Direction is ParameterDirection.Output
+                or ParameterDirection.InputOutput
+                or ParameterDirection.ReturnValue)
+            {
+                result[parameter.ParameterName.TrimStart('@')] =
+                    parameter.Value == DBNull.Value ? null : parameter.Value;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Indica si la ejecución produjo parámetros de salida (Output, InputOutput o ReturnValue).
+    /// </summary>
+    public bool HasOutputParameters => _outputParameters.Count > 0;
+
+    /// <summary>
+    /// Parámetros de salida devueltos por el procedimiento, indexados por nombre (sin '@').
+    /// </summary>
+    public IReadOnlyDictionary<string, object?> OutputParameters => _outputParameters;
+
+    /// <summary>
+    /// Obtiene el valor de un parámetro de salida por nombre (con o sin '@').
+    /// </summary>
+    /// <typeparam name="T">Tipo de destino.</typeparam>
+    /// <param name="name">Nombre del parámetro.</param>
+    /// <returns>El valor convertido, o el valor por defecto de <typeparamref name="T"/> si es nulo o no existe.</returns>
+    public T? GetOutputValue<T>(string name)
+    {
+        if (!_outputParameters.TryGetValue(name.TrimStart('@'), out var value) || value is null)
+        {
+            return default;
+        }
+
+        var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+        return (T)Convert.ChangeType(value, targetType);
     }
 
     /// <summary>
