@@ -10,7 +10,11 @@ namespace DBSQLClient.Servicio.Mapper
     {
         public Type EntityType { get; init; }
 
-        public PropertyInfo PrimaryKey { get; init; }
+        // Nula cuando el tipo no declara [PrimaryKey] (ej: tablas de unión como UserRole).
+        public PropertyInfo? PrimaryKey { get; init; }
+
+        // Nombre de columna (o nombre de propiedad si no hay [Column]) -> propiedad.
+        public Dictionary<string, PropertyInfo> Columns { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         // FK hacia otros tipos (key = tipo destino)
         public Dictionary<Type, PropertyInfo> ForeignKeys { get; } = new();

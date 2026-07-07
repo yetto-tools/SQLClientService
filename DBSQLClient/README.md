@@ -268,3 +268,75 @@ private static readonly JsonSerializerOptions DefaultJsonOptions = new JsonSeria
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,  // No incluir nulls
     Converters = { new JsonStringEnumConverter() }  // Enums como texto
 };
+```
+
+## Mapeo de relaciones (SqlResultMapper)
+
+`SqlQueryResult` puede mapearse a objetos con relaciones (uno-a-uno, uno-a-muchos, muchos-a-uno
+y muchos-a-muchos) usando los métodos de extensión en `DBSQLClient.Servicio.Mapper.RelationsMapper`.
+
+Declara las relaciones en tus modelos con atributos:
+
+```csharp
+public class User
+{
+    [PrimaryKey]
+    [Column("user_id")]
+    public int Id { get; set; }
+
+    [Column("user_name")]
+    public string Name { get; set; }
+
+    [OneToOne(typeof(UserProfile))]
+    public UserProfile Profile { get; set; }
+
+    [OneToMany(typeof(Order))]
+    public List<Order> Orders { get; set; } = new();
+
+    [ManyToMany(typeof(Role), typeof(UserRole))]
+    public List<Role> Roles { get; set; } = new();
+}
+
+public class Order
+{
+    [PrimaryKey]
+    [Column("order_id")]
+    public int Id { get; set; }
+
+    [ForeignKey(typeof(User))]
+    [Column("user_id")]
+    public int UserId { get; set; }
+
+    [ManyToOne(typeof(User))]
+    public User User { get; set; }
+}
+```
+
+`[Column("nombre_columna")]` es opcional: si no se indica, se usa el nombre de la propiedad tal
+cual viene en el `DataTable`. `[PrimaryKey]` y `[ForeignKey]` permiten que el mapper resuelva las
+claves automáticamente al agrupar padres con hijos o al cruzar tablas de unión.
+
+Con las relaciones declaradas, el nombre de la propiedad de navegación y las claves se resuelven
+solas — no hace falta pasarlas como string:
+
+```csharp
+// Tabla 0 = User, tabla 1 = UserProfile
+var user = result.MapOneToOne<User, UserProfile>();
+
+// Tabla 0 = User, tabla 1 = Orders
+var user = result.MapOneToMany<User, Order>();
+
+// Tabla 0 = Orders, tabla 1 = User (un único padre compartido por todos los hijos)
+var orders = result.MapManyToOne<Order, User>();
+
+// Tabla 0 = Users, tabla 1 = Roles, tabla 2 = UserRole (tabla de unión)
+var users = result.MapManyToMany<User, Role, UserRole>();
+
+// Varios padres, cada uno con sus propios hijos (tabla 0 = Users, tabla 1 = Orders)
+var users = result.OneToManyMultiple<User, Order>();
+```
+
+Si tus nombres de propiedad o de claves no siguen la convención de los atributos (o el modelo no
+tiene atributos), todos los métodos aceptan los nombres explícitos como parámetros opcionales,
+por ejemplo `result.MapOneToMany<User, Order>("Orders")` o
+`result.MapManyToMany<User, Role, UserRole>("Roles", leftKey: "Id", joinLeftKey: "UserId", joinRightKey: "RoleId")`.

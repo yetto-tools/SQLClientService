@@ -26,7 +26,9 @@ public static class Program
                 "sp_User_With_Profile",
                 SqlHelper.Params(("UserId", 1)));
 
-            var user = result.MapOneToOne<User, UserProfile>("Profile");
+            // La propiedad de navegación ("Profile") se resuelve automáticamente
+            // a partir de [OneToOne(typeof(UserProfile))] en User.
+            var user = result.MapOneToOne<User, UserProfile>();
 
             Console.WriteLine($"ID: {user.Id}");
             Console.WriteLine($"NAME: {user.Name}");
@@ -38,8 +40,22 @@ public static class Program
 
             Console.WriteLine("-- \n");
             var result2 = await db.ExecuteAsync("sp_User_With_Orders", SqlHelper.Params(("UserId", 1)));
-            var userOrden = result2.MapOneToMany<User, Order>("Orders");
+            var userOrden = result2.MapOneToMany<User, Order>();
             Console.WriteLine($"{userOrden.ToJsonString()}");
+
+            Console.WriteLine("-- \n");
+            // Tabla 0 = Orders (muchos), tabla 1 = User (uno).
+            // La propiedad "User" en Order se resuelve vía [ManyToOne(typeof(User))].
+            var result3 = await db.ExecuteAsync("sp_Orders_With_User", SqlHelper.Params(("UserId", 1)));
+            var orders = result3.MapManyToOne<Order, User>();
+            Console.WriteLine($"{orders.ToJsonString()}");
+
+            Console.WriteLine("-- \n");
+            // Tabla 0 = Users, tabla 1 = Roles, tabla 2 = UserRole (unión).
+            // Las claves y la propiedad "Roles" se resuelven vía [ManyToMany]/[ForeignKey]/[PrimaryKey].
+            var result4 = await db.ExecuteAsync("sp_Users_With_Roles", SqlHelper.Params(("UserId", 1)));
+            var usersWithRoles = result4.MapManyToMany<User, Role, UserRole>();
+            Console.WriteLine($"{usersWithRoles.ToJsonString()}");
         })
         .GetAwaiter()
         .GetResult();
