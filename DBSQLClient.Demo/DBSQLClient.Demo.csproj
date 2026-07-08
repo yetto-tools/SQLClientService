@@ -11,4 +11,10 @@
     <ProjectReference Include="..\DBSQLClient\DBSQLClient.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Database\DemoDatabaseSetup.sql">
+      <LogicalName>DemoDatabaseSetup.sql</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>

@@ -24,7 +24,7 @@ public sealed class SqlCommandRequest
         SqlParameter[]? parameters,
         int timeout,
         CancellationToken cancellationToken,
-        CommandBehavior behavior = CommandBehavior.SequentialAccess)
+        CommandBehavior behavior = CommandBehavior.Default)
     {
         if (string.IsNullOrWhiteSpace(commandText))
         {
@@ -66,8 +66,10 @@ public sealed class SqlCommandRequest
 
     /// <summary>
     /// Comportamiento del lector para controlar el buffering y la transmisión de datos.
-    /// Se usa <see cref="CommandBehavior.SequentialAccess"/> por defecto para minimizar
-    /// el consumo de memoria bajo carga alta.
+    /// Se usa <see cref="CommandBehavior.Default"/> porque <see cref="System.Data.DataTable.Load(System.Data.IDataReader)"/>,
+    /// usado internamente para materializar cada resultado, no garantiza recorrer correctamente
+    /// múltiples result sets del mismo comando (por ejemplo, los que consume <c>SqlResultMapper</c>
+    /// para relaciones) cuando el lector se abre con <see cref="CommandBehavior.SequentialAccess"/>.
     /// </summary>
     public CommandBehavior Behavior { get; }
 }

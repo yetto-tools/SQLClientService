@@ -1,8 +1,10 @@
 using System.Data;
-using System.Reflection;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using DBSQLClient.Helpers;
 using DBSQLClient.Servicio;
+using DBSQLClient.Servicio.Mapper;
 using Microsoft.Data.SqlClient;
 
 namespace DBSQLClient.Conexion;
@@ -14,13 +16,38 @@ public sealed class SqlQueryResult
 {
     private readonly DataSet _dataResult;
     private readonly Dictionary<string, object?> _outputParameters;
+    // Encoder relajado: por defecto System.Text.Json escapa todo carácter no-ASCII (ej. "á" ->
+    // "á"). Ver el comentario junto a ObjectJsonExtensions._options para el detalle y la
+    // consideración de seguridad si este JSON se incrusta directo en una página HTML.
     private static readonly JsonSerializerOptions DefaultJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Converters = { new JsonStringEnumConverter() }
+        Converters = { new JsonStringEnumConverter() },
+        TypeInfoResolver = ObjectJsonExtensions.LibraryAttributesResolver,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
+
+    /// <summary>
+    /// Igual que <see cref="ObjectJsonExtensions.ResolveOptions"/> pero con
+    /// <see cref="DefaultJsonOptions"/> (en vez del de <see cref="ObjectJsonExtensions"/>) como
+    /// valor por defecto cuando el llamador no pasa <paramref name="options"/>.
+    /// </summary>
+    private static JsonSerializerOptions ResolveJsonOptions(JsonSerializerOptions? options)
+    {
+        if (options is null)
+        {
+            return DefaultJsonOptions;
+        }
+
+        if (options.TypeInfoResolver is not null)
+        {
+            return options;
+        }
+
+        return new JsonSerializerOptions(options) { TypeInfoResolver = ObjectJsonExtensions.LibraryAttributesResolver };
+    }
 
     /// <summary>
     /// Inicializa una nueva instancia a partir de un <see cref="DataSet"/> devuelto por SQL Server.
@@ -143,7 +170,9 @@ public sealed class SqlQueryResult
     public IEnumerable<DataRow> AsEnumerable() => AsDataTable().AsEnumerable();
 
     /// <summary>
-    /// Convierte la primera tabla en una lista de instancias del tipo indicado.
+    /// Convierte la primera tabla en una lista de instancias del tipo indicado, usando el nombre
+    /// de columna declarado en <see cref="ColumnAttribute"/> cuando existe (igual que
+    /// <c>SqlResultMapper</c>), o el nombre de la propiedad en su defecto.
     /// </summary>
     /// <typeparam name="T">Tipo de destino con constructor público sin parámetros.</typeparam>
     /// <returns>Lista poblada con las filas de la tabla.</returns>
@@ -151,18 +180,17 @@ public sealed class SqlQueryResult
     {
         var table = AsDataTable();
         var list = new List<T>();
-        var properties = typeof(T).GetProperties()
-            .Where(p => p.GetCustomAttribute<NotMappedAttribute>() is null)
-            .ToArray();
+        var metadata = MetadataCache.Get(typeof(T));
 
         foreach (DataRow row in table.Rows)
         {
             var obj = new T();
-            foreach (var prop in properties)
+            foreach (var (columnName, prop) in metadata.Columns)
             {
-                if (table.Columns.Contains(prop.Name) && row[prop.Name] != DBNull.Value)
+                if (table.Columns.Contains(columnName) && row[columnName] != DBNull.Value)
                 {
-                    prop.SetValue(obj, Convert.ChangeType(row[prop.Name], prop.PropertyType));
+                    var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                    prop.SetValue(obj, Convert.ChangeType(row[columnName], targetType));
                 }
             }
             list.Add(obj);
@@ -220,7 +248,7 @@ public sealed class SqlQueryResult
     public string ToJson<T>(JsonSerializerOptions? options = null) where T : new()
     {
         var list = ToList<T>();
-        return JsonSerializer.Serialize(list, options ?? DefaultJsonOptions);
+        return JsonSerializer.Serialize(list, ResolveJsonOptions(options));
     }
 
     /// <summary>

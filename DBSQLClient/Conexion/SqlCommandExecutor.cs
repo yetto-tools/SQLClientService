@@ -125,89 +125,63 @@ public sealed class SqlCommandExecutor : ISqlCommandExecutor
         }
     }
 
+    /// <summary>
+    /// Lee todos los result sets del <paramref name="reader"/> hacia un <see cref="DataSet"/>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="DataTable.Load(IDataReader)"/> ya avanza internamente al siguiente result set
+    /// como parte de su propia ejecución (y cierra el reader cuando no quedan más). Por eso este
+    /// método NO debe llamar <c>NextResult</c>/<c>NextResultAsync</c> después de un <c>Load</c>
+    /// exitoso: hacerlo saltaría el siguiente result set sin leerlo. La única razón para avanzar
+    /// manualmente es saltar un result set sin columnas (por ejemplo, de una sentencia que no es
+    /// <c>SELECT</c> mezclada en el procedimiento), que <c>Load</c> no puede materializar.
+    /// </remarks>
     private static async Task<DataSet> ReadDataSetAsync(SqlDataReader reader, CancellationToken cancellationToken)
     {
         var dataSet = new DataSet();
 
-        if (!await EnsureResultWithFieldsAsync(reader, cancellationToken).ConfigureAwait(false))
+        while (!reader.IsClosed)
         {
-            return dataSet;
-        }
+            if (reader.FieldCount == 0)
+            {
+                if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    break;
+                }
 
-        do
-        {
+                continue;
+            }
+
             var dataTable = new DataTable();
             dataTable.Load(reader);
             dataSet.Tables.Add(dataTable);
         }
-        while (await MoveToNextResultWithFieldsAsync(reader, cancellationToken).ConfigureAwait(false));
 
         return dataSet;
     }
 
+    /// <inheritdoc cref="ReadDataSetAsync"/>
     private static DataSet ReadDataSet(SqlDataReader reader)
     {
         var dataSet = new DataSet();
 
-        if (!EnsureResultWithFields(reader))
+        while (!reader.IsClosed)
         {
-            return dataSet;
-        }
+            if (reader.FieldCount == 0)
+            {
+                if (!reader.NextResult())
+                {
+                    break;
+                }
 
-        do
-        {
+                continue;
+            }
+
             var dataTable = new DataTable();
             dataTable.Load(reader);
             dataSet.Tables.Add(dataTable);
         }
-        while (MoveToNextResultWithFields(reader));
 
         return dataSet;
-    }
-
-    private static async Task<bool> EnsureResultWithFieldsAsync(SqlDataReader reader, CancellationToken cancellationToken)
-    {
-        if (reader.FieldCount > 0)
-        {
-            return true;
-        }
-
-        return await MoveToNextResultWithFieldsAsync(reader, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static bool EnsureResultWithFields(SqlDataReader reader)
-    {
-        if (reader.FieldCount > 0)
-        {
-            return true;
-        }
-
-        return MoveToNextResultWithFields(reader);
-    }
-
-    private static async Task<bool> MoveToNextResultWithFieldsAsync(SqlDataReader reader, CancellationToken cancellationToken)
-    {
-        while (await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
-        {
-            if (reader.FieldCount > 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool MoveToNextResultWithFields(SqlDataReader reader)
-    {
-        while (reader.NextResult())
-        {
-            if (reader.FieldCount > 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

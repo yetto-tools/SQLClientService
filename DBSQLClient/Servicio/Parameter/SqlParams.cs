@@ -64,11 +64,11 @@ namespace DBSQLClient.Servicio.Parameter
     }
 
     /// <summary>
-    /// Único punto de entrada para construir <see cref="SqlParameter"/>: parámetros individuales
-    /// (simples, tipados, de salida) o arreglos completos desde tuplas, diccionarios u objetos.
-    /// No contiene nada ajeno a parámetros SQL — para utilidades genéricas no relacionadas con SQL
-    /// (ej: serialización JSON) usa las clases en <c>DBSQLClient.Helpers</c> específicas de ese dominio,
-    /// como <see cref="DBSQLClient.Helpers.ObjectJsonExtensions"/>.
+    /// Único punto de entrada para construir <see cref="SqlParameter"/>: parámetros individuales<br></br>
+    /// (simples, tipados, de salida) o arreglos completos desde tuplas, diccionarios u objetos.<br></br>
+    /// No contiene nada ajeno a parámetros SQL — para utilidades genéricas no relacionadas con SQL<br></br>
+    /// (ej: serialización JSON) usa las clases en <c>DBSQLClient.Helpers</c> específicas de ese dominio,<br></br>
+    /// como <see cref="DBSQLClient.Helpers.ObjectJsonExtensions"/>.<br></br>
     /// </summary>
     public static class SqlParams
     {
@@ -134,6 +134,26 @@ namespace DBSQLClient.Servicio.Parameter
         }
 
         /// <summary>
+        /// Crea un parámetro de salida decimal con precisión y escala explícitas.
+        /// </summary>
+        /// <remarks>
+        /// Usa siempre esta sobrecarga (o <see cref="SqlParameterExtensions.WithPrecision"/> sobre
+        /// <see cref="OutParam(string, SqlDbType)"/>) para parámetros de salida
+        /// <see cref="SqlDbType.Decimal"/>: <see cref="SqlParameter"/> sin precisión/escala
+        /// explícitas asume <c>Scale = 0</c>, lo que trunca/redondea silenciosamente el valor de
+        /// salida a un entero (ej: <c>99.97</c> vuelve <c>100</c>) sin lanzar ningún error.
+        /// </remarks>
+        public static SqlParameter OutParam(string name, SqlDbType type, byte precision, byte scale)
+        {
+            return new SqlParameter(NormalizeName(name), type)
+            {
+                Direction = ParameterDirection.Output,
+                Precision = precision,
+                Scale = scale
+            };
+        }
+
+        /// <summary>
         /// Crea un parámetro de entrada/salida (InputOutput).
         /// </summary>
         public static SqlParameter InOutParam(string name, object? value, SqlDbType type)
@@ -157,10 +177,10 @@ namespace DBSQLClient.Servicio.Parameter
         }
 
         /// <summary>
-        /// Obtiene el valor de un parámetro de salida de forma segura.
-        /// Si ya ejecutaste el comando a través de <see cref="Conexion.SqlClientService"/>, prefiere
-        /// <c>SqlQueryResult.GetOutputValue&lt;T&gt;(name)</c>, que no requiere conservar la referencia
-        /// al <see cref="SqlParameter"/> original.
+        /// Obtiene el valor de un parámetro de salida de forma segura.<br></br>
+        /// Si ya ejecutaste el comando a través de <see cref="Conexion.SqlClientService"/>, prefiere<br></br>
+        /// <c>SqlQueryResult.GetOutputValue&lt;T&gt;(name)</c>, que no requiere conservar la referencia<br></br>
+        /// al <see cref="SqlParameter"/> original.<br></br>
         /// </summary>
         public static T? GetOutputValue<T>(SqlParameter parameter)
         {
@@ -175,7 +195,7 @@ namespace DBSQLClient.Servicio.Parameter
         #region Parámetros por tipo específico
 
         /// <summary>
-        /// Crea un parámetro de tipo entero. Si <paramref name="value"/> es nulo, se usa
+        /// Crea un parámetro de tipo entero. Si <paramref name="value"/> es nulo, se usa<br></br>
         /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
         public static SqlParameter Int(string name, int? value, int? defaultValue = null)
@@ -184,9 +204,9 @@ namespace DBSQLClient.Servicio.Parameter
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo string (NVARCHAR). Usa <see cref="Max"/> (por defecto)
-        /// para <c>NVARCHAR(MAX)</c>. Si <paramref name="value"/> es nulo, se usa
-        /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
+        /// Crea un parámetro de tipo string (NVARCHAR). Usa <see cref="Max"/> (por defecto)<br></br>
+        /// para <c>NVARCHAR(MAX)</c>. Si <paramref name="value"/> es nulo, se usa<br></br>
+        /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.<br></br>
         /// </summary>
         public static SqlParameter String(string name, string? value, int size = Max, string? defaultValue = null)
         {
@@ -218,7 +238,7 @@ namespace DBSQLClient.Servicio.Parameter
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo DateTime2 (mayor precisión). Si <paramref name="value"/> es nulo,
+        /// Crea un parámetro de tipo DateTime2 (mayor precisión). Si <paramref name="value"/> es nulo,<br></br>
         /// se usa <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
         public static SqlParameter DateTime2(string name, DateTime? value, DateTime? defaultValue = null)
@@ -236,7 +256,7 @@ namespace DBSQLClient.Servicio.Parameter
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo booleano (Bit). Si <paramref name="value"/> es nulo, se usa
+        /// Crea un parámetro de tipo booleano (Bit). Si <paramref name="value"/> es nulo, se usa<br></br>
         /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
         public static SqlParameter Bool(string name, bool? value, bool? defaultValue = null)
@@ -245,7 +265,7 @@ namespace DBSQLClient.Servicio.Parameter
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo GUID. Si <paramref name="value"/> es nulo, se usa
+        /// Crea un parámetro de tipo GUID. Si <paramref name="value"/> es nulo, se usa<br></br>
         /// <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
         public static SqlParameter Guid(string name, Guid? value, Guid? defaultValue = null)
@@ -254,7 +274,7 @@ namespace DBSQLClient.Servicio.Parameter
         }
 
         /// <summary>
-        /// Crea un parámetro de tipo binario (VarBinary(MAX)). Si <paramref name="value"/> es nulo,
+        /// Crea un parámetro de tipo binario (VarBinary(MAX)). Si <paramref name="value"/> es nulo,<br></br>
         /// se usa <paramref name="defaultValue"/>; si ambos son nulos, se envía DBNull.
         /// </summary>
         public static SqlParameter Binary(string name, byte[]? value, byte[]? defaultValue = null)
@@ -267,9 +287,9 @@ namespace DBSQLClient.Servicio.Parameter
         #region Valores nulos explícitos
 
         /// <summary>
-        /// Crea un parámetro explícitamente NULL (<see cref="DBNull.Value"/>) del tipo SQL indicado.
-        /// Útil para dejar claro en el código que el valor es intencionalmente nulo, en vez de
-        /// depender de que <c>value</c> termine siendo nulo en alguno de los métodos anteriores.
+        /// Crea un parámetro explícitamente NULL (<see cref="DBNull.Value"/>) del tipo SQL indicado.<br></br>
+        /// Útil para dejar claro en el código que el valor es intencionalmente nulo, en vez de<br></br>
+        /// depender de que <c>value</c> termine siendo nulo en alguno de los métodos anteriores.<br></br>
         /// </summary>
         /// <example><c>SqlParams.DbNull("MiddleName", SqlDbType.NVarChar)</c></example>
         public static SqlParameter DbNull(string name, SqlDbType type)
@@ -290,9 +310,9 @@ namespace DBSQLClient.Servicio.Parameter
         #region Arreglos de parámetros
 
         /// <summary>
-        /// Crea un arreglo de parámetros SQL. El tipo (<see cref="SqlDbType"/>) y el tamaño son
-        /// opcionales por parámetro: sin ellos se infieren del valor; con ellos, se fuerzan
-        /// (necesario para casos como XML o cadenas de longitud específica).
+        /// Crea un arreglo de parámetros SQL. El tipo (<see cref="SqlDbType"/>) y el tamaño son<br></br>
+        /// opcionales por parámetro: sin ellos se infieren del valor; con ellos, se fuerzan<br></br>
+        /// (necesario para casos como XML o cadenas de longitud específica).<br></br>
         /// </summary>
         /// <example>
         /// <c>SqlParams.AddParams(("UserId", 1), ("Name", "asdfsadf", SqlDbType.NVarChar, 150))</c>
@@ -329,9 +349,9 @@ namespace DBSQLClient.Servicio.Parameter
         #endregion
 
         /// <summary>
-        /// Normaliza el nombre del parámetro agregando '@' si no lo tiene. También la usa
-        /// <see cref="Conexion.SqlCommandExecutor"/> como red de seguridad para parámetros
-        /// construidos a mano con <c>new SqlParameter(...)</c> sin pasar por esta clase.
+        /// Normaliza el nombre del parámetro agregando '@' si no lo tiene. También la usa<br></br>
+        /// <see cref="Conexion.SqlCommandExecutor"/> como red de seguridad para parámetros<br></br>
+        /// construidos a mano con <c>new SqlParameter(...)</c> sin pasar por esta clase.<br></br>
         /// </summary>
         internal static string NormalizeName(string name)
         {
@@ -499,6 +519,17 @@ namespace DBSQLClient.Servicio.Parameter
         public SqlParameterBuilder AddOutput(string name, SqlDbType type)
         {
             _parameters.Add(SqlParams.OutParam(name, type));
+            return this;
+        }
+
+        /// <summary>
+        /// Agrega un parámetro de salida decimal con precisión y escala explícitas. Ver
+        /// <see cref="SqlParams.OutParam(string, SqlDbType, byte, byte)"/> sobre por qué hace
+        /// falta para <see cref="SqlDbType.Decimal"/>.
+        /// </summary>
+        public SqlParameterBuilder AddOutput(string name, SqlDbType type, byte precision, byte scale)
+        {
+            _parameters.Add(SqlParams.OutParam(name, type, precision, scale));
             return this;
         }
 

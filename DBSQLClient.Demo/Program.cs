@@ -1,77 +1,55 @@
-using System.Data;
 using DBSQLClient.Conexion;
-using DBSQLClient.Demo.Models;
-using DBSQLClient.Helpers;
-using DBSQLClient.Servicio;
-using DBSQLClient.Servicio.Mapper.RelationsMapper;
-using DBSQLClient.Servicio.Parameter;
+using DBSQLClient.Demo.Database;
+using DBSQLClient.Demo.Examples;
 
-namespace DBSQLClient.Demo {
+namespace DBSQLClient.Demo;
 
-    /// <summary>
-    /// Clase principal del programa que demuestra el uso de la biblioteca DBSQLClient para interactuar con SQL Server.
-    /// </summary>
-    public static class Program
+/// <summary>
+/// Demo ejecutable de <c>DBSQLClient</c>: cada <c>Example*</c> en <c>Examples/</c> muestra una
+/// capacidad de la librería de forma aislada y copiable a otro proyecto. Ver README.md de este
+/// proyecto para el detalle de qué hace cada uno.
+/// </summary>
+public static class Program
+{
+    public static async Task Main()
     {
-        /// <summary>
-        /// Punto de entrada principal del programa.
-        /// </summary>
-        public static void Main()
-        {
-            var connectionString = "Data Source=(localdb)\\MSSQLLocalDB;Database=DB_TEST;Integrated Security=True;Persist Security Info=False;Pooling=True;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=5000";
+        Console.WriteLine("Preparando base de datos de demo...");
+        await DemoDatabaseBootstrapper.EnsureCreatedAsync();
+        Console.WriteLine($"Base de datos '{DemoDatabase.Name}' lista.\n");
 
-            var db = new SqlClientService(connectionString);
+        var db = new SqlClientService(DemoDatabase.ConnectionString);
 
-            Task.Run(async () => {
-                var result = await db.ExecuteAsync(
-                    "sp_User_With_Profile",
-                    SqlParams.AddParams(("UserId", 1)));
-
-                // La propiedad de navegación ("Profile") se resuelve automáticamente
-                // a partir de [OneToOne(typeof(UserProfile))] en User.
-                var user = result.MapOneToOne<User, UserProfile>();
-
-                Console.WriteLine($"ID: {user.Id}");
-                Console.WriteLine($"NAME: {user.Name}");
-                Console.WriteLine($"EMAIL: {user.Email}");
-                Console.WriteLine($"PROFILE BIO: {user.Profile?.Bio}");
-                Console.WriteLine($"PROFILE BIRTHDATE: {user.Profile?.BirthDate}");
-                Console.WriteLine("-- \n");
-                Console.WriteLine($"{user.ToJsonString()}");
-
-                Console.WriteLine("-- \n");
-                var result2 = await db.ExecuteAsync("sp_User_With_Orders", SqlParams.AddParams(("UserId", 1)));
-                var userOrden = result2.MapOneToMany<User, Order>();
-                Console.WriteLine($"{userOrden.ToJsonString()}");
-
-                Console.WriteLine("-- \n");
-                // Tabla 0 = Orders (muchos), tabla 1 = User (uno).
-                // La propiedad "User" en Order se resuelve vía [ManyToOne(typeof(User))].
-                var result3 = await db.ExecuteAsync("sp_Orders_With_User", SqlParams.AddParams(("UserId", 1)));
-                var orders = result3.MapManyToOne<Order, User>();
-                Console.WriteLine($"{orders.ToJsonString()}");
-
-                Console.WriteLine("-- \n");
-                // Tabla 0 = Users, tabla 1 = Roles, tabla 2 = UserRole (unión).
-                // Las claves y la propiedad "Roles" se resuelven vía [ManyToMany]/[ForeignKey]/[PrimaryKey].
-                var result4 = await db.ExecuteAsync("sp_Users_With_Roles", SqlParams.AddParams(("UserId", 1)));
-                var usersWithRoles = result4.MapManyToMany<User, Role, UserRole>();
-                Console.WriteLine($"{usersWithRoles.ToJsonString()}");
-
-                Console.WriteLine("-- \n");
-                // Procedimiento con parámetro de salida: se agrega con SqlParams.OutParam y se
-                // combina con los de entrada. El valor se lee del resultado, no del arreglo original.
-                var outputParams = SqlParams.AddParams(("UserId", 1))
-                    .Append(SqlParams.OutParam("TotalOrders", SqlDbType.Int))
-                    .ToArray();
-
-                var result5 = await db.ExecuteAsync("sp_GetUserOrderTotal", outputParams);
-                var totalOrders = result5.GetOutputValue<int>("TotalOrders");
-                Console.WriteLine($"TOTAL ORDERS (output param): {totalOrders}");
-            })
-                .GetAwaiter()
-                .GetResult();
-        }
+        await RunAsync("1. Consulta SQL de texto (QueryAsync)", () => Example01_RawQuery.RunAsync(db));
+        await RunAsync("2. Procedimiento almacenado simple (ExecuteAsync)", () => Example02_StoredProcedure.RunAsync(db));
+        await RunAsync("3. Parámetro de salida (SqlParams.OutParam)", () => Example03_OutputParameters.RunAsync(db));
+        await RunAsync("4. Relación uno a uno (MapOneToOne): Order + Invoice", () => Example04_OneToOne.RunAsync(db));
+        await RunAsync("5. Atributos de variante EAV (MapOneToMany)", () => Example05_ProductVariantAttributes.RunAsync(db));
+        await RunAsync("6. Relación uno a muchos (MapOneToMany): Order + Items", () => Example06_OneToMany.RunAsync(db));
+        await RunAsync("7. Relación muchos a uno (MapManyToOne): usuario vs. invitado", () => Example07_ManyToOne.RunAsync(db));
+        await RunAsync("8. Relación muchos a muchos (MapManyToMany): Product + Category", () => Example08_ManyToMany.RunAsync(db));
+        await RunAsync("9. Uno a muchos con varios padres (OneToManyMultiple): Carts", () => Example09_MultipleOneToMany.RunAsync(db));
+        await RunAsync("10. Serialización JSON (ToJson / SaveToJsonFileAsync)", () => Example10_JsonSerialization.RunAsync(db));
+        await RunAsync("11. SqlParameterBuilder + escritura (INSERT con output)", () => Example11_ParameterBuilder.RunAsync(db));
+        await RunAsync("12. GUID público en vez de Id interno (para exponer en una API)", () => Example12_GuidPublicId.RunAsync(db));
+        await RunAsync("13. Precio efectivo con descuentos/promociones (3 output params)", () => Example13_VariantPricing.RunAsync(db));
+        await RunAsync("14. Combos (MapOneToMany) con vigencia por fecha", () => Example14_Combo.RunAsync(db));
     }
 
+    private static async Task RunAsync(string title, Func<Task> example)
+    {
+        Console.WriteLine(new string('=', 70));
+        Console.WriteLine(title);
+        Console.WriteLine(new string('=', 70));
+
+        try
+        {
+            await example();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] {ex.Message}");
+        }
+
+        Console.WriteLine();
+    }
 }
