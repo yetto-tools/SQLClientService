@@ -13,11 +13,12 @@ namespace DBSQLClient.Demo.Examples;
 /// <c>[OneToOne(typeof(Invoice))]</c> en <see cref="Order"/>.
 /// </summary>
 /// <remarks>
-/// <c>MapOneToOne</c> solo resuelve 2 tablas por llamada, así que el detalle de productos de la
-/// factura (<see cref="Invoice.Items"/>) se trae con una segunda llamada
-/// (<c>sp_Invoice_With_Items</c> + <c>MapOneToMany&lt;Invoice, OrderItem&gt;</c>) y se combina a
-/// mano en el mismo objeto ya mapeado — el patrón general para poblar varias relaciones de un
-/// mismo objeto cuando no hay un solo SP que las traiga todas juntas.
+/// <c>MapOneToOne</c> solo resuelve 2 tablas por llamada, así que el detalle de lo que se
+/// facturó (<see cref="Invoice.Items"/>, una foto fija en <c>InvoiceItems</c>, no una referencia
+/// viva a <c>OrderItems</c>) se trae con una segunda llamada (<c>sp_Invoice_With_Items</c> +
+/// <c>MapOneToMany&lt;Invoice, InvoiceItem&gt;</c>) y se combina a mano en el mismo objeto ya
+/// mapeado — el patrón general para poblar varias relaciones de un mismo objeto cuando no hay un
+/// solo SP que las traiga todas juntas.
 /// </remarks>
 public static class Example04_OneToOne
 {
@@ -29,7 +30,7 @@ public static class Example04_OneToOne
         if (order.Invoice is { } invoice)
         {
             var itemsResult = await db.ExecuteAsync("sp_Invoice_With_Items", SqlParams.AddParams(("InvoiceId", invoice.Id)));
-            invoice.Items = itemsResult.MapOneToMany<Invoice, OrderItem>().Items;
+            invoice.Items = itemsResult.MapOneToMany<Invoice, InvoiceItem>().Items;
         }
 
         Console.WriteLine(order.ToJsonString());

@@ -3,10 +3,11 @@ using DBSQLClient.Servicio;
 namespace DBSQLClient.Demo.Models;
 
 /// <summary>
-/// <see cref="Items"/> es el mismo detalle de producto que <see cref="Order.Items"/> (una
-/// factura factura exactamente lo que trae la orden en este demo), pero se declara acá también
-/// porque <c>MapOneToOne&lt;Order, Invoice&gt;</c> solo resuelve 2 tablas (Order + Invoice): el
-/// detalle se trae con una segunda llamada a <c>sp_Invoice_With_Items</c> y se asigna a mano.
+/// <see cref="Items"/> es una foto fija de <see cref="InvoiceItem"/> (copiada de
+/// <see cref="Order.Items"/> al momento de emitir la factura, no una referencia viva a
+/// <c>OrderItems</c>): si la orden cambiara después, la factura ya emitida no se ve afectada.
+/// Se trae con una segunda llamada a <c>sp_Invoice_With_Items</c> y se asigna a mano porque
+/// <c>MapOneToOne&lt;Order, Invoice&gt;</c> solo resuelve 2 tablas (Order + Invoice) por llamada.
 /// </summary>
 [Table("Invoices")]
 public class Invoice
@@ -32,6 +33,6 @@ public class Invoice
     [Column("total_amount")]
     public decimal TotalAmount { get; set; }
 
-    [OneToMany(typeof(OrderItem))]
-    public List<OrderItem> Items { get; set; } = new();
+    [OneToMany(typeof(InvoiceItem))]
+    public List<InvoiceItem> Items { get; set; } = new();
 }

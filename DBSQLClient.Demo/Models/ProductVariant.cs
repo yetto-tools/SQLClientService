@@ -23,9 +23,15 @@ public class ProductVariant
 
     public decimal Price { get; set; }
 
+    // Saldo actual (más rápido de leer que sumar el historial completo). El historial en sí
+    // vive en Movements/InventoryMovements -- ver sp_GetVariantAvailableStock para el cálculo
+    // de cuánto de este stock ya está reservado en carritos y no debería volver a venderse.
     [Column("stock_quantity")]
     public int StockQuantity { get; set; }
 
     [OneToMany(typeof(ProductVariantAttribute))]
     public List<ProductVariantAttribute> Attributes { get; set; } = new();
+
+    [OneToMany(typeof(InventoryMovement))]
+    public List<InventoryMovement> Movements { get; set; } = new();
 }

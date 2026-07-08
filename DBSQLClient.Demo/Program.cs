@@ -33,6 +33,7 @@ public static class Program
         await RunAsync("12. GUID público en vez de Id interno (para exponer en una API)", () => Example12_GuidPublicId.RunAsync(db));
         await RunAsync("13. Precio efectivo con descuentos/promociones (3 output params)", () => Example13_VariantPricing.RunAsync(db));
         await RunAsync("14. Combos (MapOneToMany) con vigencia por fecha", () => Example14_Combo.RunAsync(db));
+        await RunAsync("15. Inventario: historial de movimientos + stock disponible", () => Example15_Inventory.RunAsync(db));
     }
 
     private static async Task RunAsync(string title, Func<Task> example)

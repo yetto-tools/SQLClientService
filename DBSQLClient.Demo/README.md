@@ -44,6 +44,7 @@ corridas anteriores), pero **no repliques este patrón en un proyecto real**.
 | `Examples/Example12_GuidPublicId.cs` | Exponer un GUID público en vez del `Id` interno (evita enumeración/IDOR en una API) | `sp_GetProductByPublicId` |
 | `Examples/Example13_VariantPricing.cs` | Precio efectivo con descuentos/promociones: 3 parámetros de salida en la misma llamada | `sp_GetVariantEffectivePrice` |
 | `Examples/Example14_Combo.cs` | Combos con vigencia por fecha: `MapOneToMany` + `[OneToMany]` | `sp_Combo_With_Items` |
+| `Examples/Example15_Inventory.cs` | Historial de stock (`MapOneToMany`) + stock disponible real: 3 parámetros de salida en la misma llamada | `sp_Variant_With_Movements` / `sp_GetVariantAvailableStock` |
 
 `Program.cs` los corre todos en orden, con un encabezado por ejemplo y capturando la excepción
 de cada uno por separado — si rompés uno mientras practicás, el resto del demo sigue corriendo.
@@ -57,11 +58,22 @@ posible — el sistema de relaciones de la librería ya soporta esto sin cambios
 la propiedad de navegación según el tipo pedido en `MapManyToOne<Order, User>()` o
 `MapManyToOne<Order, GuestCheckout>()`.
 
+## Por qué `InvoiceItems` existe por separado de `OrderItems` (`Example04_OneToOne`)
+
+Una factura no es una vista en vivo de la orden: es un documento que, una vez emitido, no debería
+cambiar aunque la orden sí lo haga después (corrección de precio, devolución parcial, etc.). Por
+eso `InvoiceItems` es su propia tabla, con sus propias filas — se llena copiando `OrderItems` al
+momento de emitir la factura (ver el seed en `DemoDatabaseSetup.sql`), no con un `JOIN` contra
+`OrderItems` en tiempo de consulta. En este demo ambas tablas siempre coinciden porque no hay
+correcciones posteriores, pero conceptualmente son independientes: `Order.Items` refleja la orden
+tal como está *hoy*, `Invoice.Items` refleja lo que se facturó *en su momento*.
+
 ## GUID público vs. Id interno (`Example12_GuidPublicId`)
 
 **Todas las tablas con clave propia** (`Users`, `GuestCheckouts`, `Categories`, `Products`,
 `ProductVariants`, `ProductVariantAttributes`, `Carts`, `CartItems`, `Orders`, `OrderItems`,
-`Invoices`) siguen el mismo patrón: el `INT IDENTITY` sigue siendo la clave primaria/foránea
+`Invoices`, `InvoiceItems`, `Discounts`, `Combos`, `ComboItems`, `InventoryMovements`) siguen el
+mismo patrón: el `INT IDENTITY` sigue siendo la clave primaria/foránea
 real — la más compacta y eficiente para joins e índices — y una columna `public_id`
 (`UNIQUEIDENTIFIER`, con `DEFAULT NEWID()` y `UNIQUE`) es lo que expondría una API en su lugar.
 Si un cliente externo recibe `product_id=1`, puede probar `2`, `3`, etc. y enumerar todo el
@@ -108,6 +120,20 @@ precisión/escala explícitas asume `Scale = 0` y ADO.NET redondea el valor de s
 sin avisar (`$99.97` volvía `$100.00` en `Example03`, antes de este fix). Por eso ahora existe
 `SqlParams.OutParam(name, type, precision, scale)` — usalo siempre para output decimales.
 
+## Inventario separado del catálogo: historial de movimientos y stock disponible
+
+Mismo patrón que el precio: `ProductVariants.stock_quantity` es solo el **saldo actual**, no la
+única fuente de verdad. `InventoryMovements` es la auditoría de cómo se llegó a ese saldo — cada
+fila es un movimiento con cantidad **con signo** (positivo = entra, negativo = sale) y un
+`movement_type` (`Purchase`, `Sale`, `Return`, `Adjustment`, `Damaged`). Los movimientos `Sale`/
+`Return` traen `order_id` para trazar a la orden que los originó; el resto lo deja en `NULL`.
+
+`sp_GetVariantAvailableStock` (3 parámetros de salida) responde la pregunta que el saldo por sí
+solo no contesta: **cuánto queda realmente disponible para vender**, descontando lo que ya está
+reservado en carritos (`CartItems`) pero todavía no se convirtió en orden. Sin esto, dos clientes
+podrían ver "stock disponible" y agregar al carrito las mismas últimas unidades, sin que ninguno
+se entere hasta el checkout — el carrito reserva, no debería vender dos veces lo mismo.
+
 ## Datos de ejemplo (y sus casos "sin hijos" a propósito)
 
 - **Erick** (usuario registrado): carrito con 2 ítems, una orden pagada con factura.
@@ -122,3 +148,6 @@ sin avisar (`$99.97` volvía `$100.00` en `Example03`, antes de este fix). Por e
   **ya vencida** sobre la Camiseta que no debe aplicar. Los Auriculares no tienen ningún
   descuento en ningún lado.
 - **Combos**: "Combo Verano" vigente (Camiseta + Zapatilla), "Combo Invierno" **ya vencido**.
+- **Inventario**: Camiseta M/Rojo y Zapatilla tienen compra inicial + una venta (ligada a su
+  orden); Auriculares tiene compra inicial + una unidad dañada; Camiseta L/Azul **no tiene ningún
+  movimiento registrado todavía** — ver `Example15_Inventory`.

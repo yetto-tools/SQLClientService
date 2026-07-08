@@ -50,6 +50,8 @@ IF OBJECT_ID('dbo.sp_AllCarts_With_Items', 'P') IS NOT NULL DROP PROCEDURE dbo.s
 IF OBJECT_ID('dbo.sp_AddCartItem', 'P') IS NOT NULL DROP PROCEDURE dbo.sp_AddCartItem;
 IF OBJECT_ID('dbo.sp_GetVariantEffectivePrice', 'P') IS NOT NULL DROP PROCEDURE dbo.sp_GetVariantEffectivePrice;
 IF OBJECT_ID('dbo.sp_Combo_With_Items', 'P') IS NOT NULL DROP PROCEDURE dbo.sp_Combo_With_Items;
+IF OBJECT_ID('dbo.sp_Variant_With_Movements', 'P') IS NOT NULL DROP PROCEDURE dbo.sp_Variant_With_Movements;
+IF OBJECT_ID('dbo.sp_GetVariantAvailableStock', 'P') IS NOT NULL DROP PROCEDURE dbo.sp_GetVariantAvailableStock;
 GO
 
 -- Tablas: se recrean siempre (orden por dependencias: hijas antes que padres).
@@ -61,7 +63,9 @@ IF OBJECT_ID('dbo.UserProfile', 'U') IS NOT NULL DROP TABLE dbo.UserProfile;
 IF OBJECT_ID('dbo.UserProfiles', 'U') IS NOT NULL DROP TABLE dbo.UserProfiles;
 IF OBJECT_ID('dbo.Roles', 'U') IS NOT NULL DROP TABLE dbo.Roles;
 
+IF OBJECT_ID('dbo.InventoryMovements', 'U') IS NOT NULL DROP TABLE dbo.InventoryMovements;
 IF OBJECT_ID('dbo.OrderItems', 'U') IS NOT NULL DROP TABLE dbo.OrderItems;
+IF OBJECT_ID('dbo.InvoiceItems', 'U') IS NOT NULL DROP TABLE dbo.InvoiceItems;
 IF OBJECT_ID('dbo.Invoices', 'U') IS NOT NULL DROP TABLE dbo.Invoices;
 IF OBJECT_ID('dbo.CartItems', 'U') IS NOT NULL DROP TABLE dbo.CartItems;
 IF OBJECT_ID('dbo.ComboItems', 'U') IS NOT NULL DROP TABLE dbo.ComboItems;
@@ -250,6 +254,25 @@ CREATE TABLE dbo.Orders (
     CONSTRAINT UQ_Orders_PublicId UNIQUE (public_id)
 );
 
+-- Historial de stock por variante: cada fila es un movimiento (con signo: positivo = entra,
+-- negativo = sale). stock_quantity en ProductVariants es el saldo actual (más rápido de leer
+-- que sumar todo el historial cada vez); esta tabla es la auditoría de cómo se llegó a ese saldo.
+-- order_id es NULL salvo en movimientos 'Sale'/'Return', donde trazan a la orden que los originó.
+CREATE TABLE dbo.InventoryMovements (
+    movement_id     INT IDENTITY PRIMARY KEY,
+    public_id       UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    variant_id      INT NOT NULL,
+    movement_type   NVARCHAR(20) NOT NULL, -- 'Purchase' | 'Sale' | 'Return' | 'Adjustment' | 'Damaged'
+    quantity        INT NOT NULL,
+    movement_date   DATETIME NOT NULL DEFAULT GETDATE(),
+    order_id        INT NULL,
+    notes           NVARCHAR(200) NULL,
+    CONSTRAINT FK_InventoryMovements_Variant FOREIGN KEY (variant_id) REFERENCES dbo.ProductVariants(variant_id),
+    CONSTRAINT FK_InventoryMovements_Order FOREIGN KEY (order_id) REFERENCES dbo.Orders(order_id),
+    CONSTRAINT CK_InventoryMovements_Type CHECK (movement_type IN ('Purchase', 'Sale', 'Return', 'Adjustment', 'Damaged')),
+    CONSTRAINT UQ_InventoryMovements_PublicId UNIQUE (public_id)
+);
+
 CREATE TABLE dbo.OrderItems (
     order_item_id   INT IDENTITY PRIMARY KEY,
     public_id       UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
@@ -272,6 +295,21 @@ CREATE TABLE dbo.Invoices (
     total_amount    DECIMAL(10, 2) NOT NULL,
     CONSTRAINT FK_Invoices_Order FOREIGN KEY (order_id) REFERENCES dbo.Orders(order_id),
     CONSTRAINT UQ_Invoices_PublicId UNIQUE (public_id)
+);
+
+-- Foto fija de lo que se facturó: se llena copiando OrderItems al momento de EMITIR la factura,
+-- no es una referencia viva a OrderItems. Si después cambiara el precio de la variante o la
+-- cantidad de la orden, esta tabla no se entera -- una factura ya emitida no debería cambiar.
+CREATE TABLE dbo.InvoiceItems (
+    invoice_item_id INT IDENTITY PRIMARY KEY,
+    public_id       UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    invoice_id      INT NOT NULL,
+    variant_id      INT NOT NULL,
+    quantity        INT NOT NULL,
+    unit_price      DECIMAL(10, 2) NOT NULL,
+    CONSTRAINT FK_InvoiceItems_Invoice FOREIGN KEY (invoice_id) REFERENCES dbo.Invoices(invoice_id),
+    CONSTRAINT FK_InvoiceItems_Variant FOREIGN KEY (variant_id) REFERENCES dbo.ProductVariants(variant_id),
+    CONSTRAINT UQ_InvoiceItems_PublicId UNIQUE (public_id)
 );
 GO
 
@@ -359,8 +397,28 @@ INSERT INTO dbo.OrderItems (order_id, variant_id, quantity, unit_price) VALUES
     (3, 4, 1, 39.99);
 
 INSERT INTO dbo.Invoices (order_id, invoice_number, total_amount) VALUES
-    (1, 'INV-0001', 39.98),
-    (2, 'INV-0002', 59.99);
+    (1, 'INV-0001', 39.98),   -- invoice_id 1
+    (2, 'INV-0002', 59.99);   -- invoice_id 2
+
+-- Copia congelada de los OrderItems correspondientes al momento de emitir cada factura (acá
+-- coinciden con la orden porque en este demo no hay correcciones posteriores, pero son filas
+-- independientes: si cambiara OrderItems después, esto no se entera).
+INSERT INTO dbo.InvoiceItems (invoice_id, variant_id, quantity, unit_price) VALUES
+    (1, 1, 2, 19.99),
+    (2, 3, 1, 59.99);
+
+-- Historial de movimientos: la suma de cada variante coincide con su stock_quantity actual.
+-- Camiseta M/Rojo (variant_id 1): compra inicial + la venta de la orden 1 (2 unidades).
+-- Zapatilla (variant_id 3): compra inicial + la venta de la orden 2 (1 unidad).
+-- Auriculares (variant_id 4): compra inicial + una unidad dañada (no vendible).
+-- Camiseta L/Azul (variant_id 2): sin ningún movimiento registrado todavía, a propósito.
+INSERT INTO dbo.InventoryMovements (variant_id, movement_type, quantity, movement_date, order_id, notes) VALUES
+    (1, 'Purchase', 52, DATEADD(DAY, -20, GETDATE()), NULL, 'Reposición inicial'),
+    (1, 'Sale', -2, DATEADD(DAY, -1, GETDATE()), 1, NULL),
+    (3, 'Purchase', 21, DATEADD(DAY, -15, GETDATE()), NULL, 'Reposición inicial'),
+    (3, 'Sale', -1, DATEADD(DAY, -1, GETDATE()), 2, NULL),
+    (4, 'Purchase', 20, DATEADD(DAY, -18, GETDATE()), NULL, 'Reposición inicial'),
+    (4, 'Damaged', -5, DATEADD(DAY, -3, GETDATE()), NULL, 'Unidades dañadas en depósito');
 GO
 
 -- ============================================================================
@@ -418,8 +476,8 @@ BEGIN
 END;
 GO
 
--- Detalle de producto de una factura: son los mismos ítems de la orden asociada
--- (Invoices.order_id), traídos por separado porque MapOneToOne solo resuelve 2 tablas.
+-- Detalle de lo que se facturó: InvoiceItems es una foto fija propia (no un JOIN contra
+-- OrderItems), traída por separado porque MapOneToOne solo resuelve 2 tablas por llamada.
 CREATE PROCEDURE dbo.sp_Invoice_With_Items
     @InvoiceId INT
 AS
@@ -429,10 +487,9 @@ BEGIN
     FROM dbo.Invoices
     WHERE invoice_id = @InvoiceId;
 
-    SELECT oi.order_item_id, oi.public_id, oi.order_id, oi.variant_id, oi.quantity, oi.unit_price
-    FROM dbo.OrderItems oi
-    INNER JOIN dbo.Invoices i ON i.order_id = oi.order_id
-    WHERE i.invoice_id = @InvoiceId;
+    SELECT invoice_item_id, public_id, invoice_id, variant_id, quantity, unit_price
+    FROM dbo.InvoiceItems
+    WHERE invoice_id = @InvoiceId;
 END;
 GO
 
@@ -614,5 +671,45 @@ BEGIN
     SELECT combo_item_id, public_id, combo_id, variant_id, quantity
     FROM dbo.ComboItems
     WHERE combo_id = @ComboId;
+END;
+GO
+
+CREATE PROCEDURE dbo.sp_Variant_With_Movements
+    @VariantId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT variant_id, public_id, product_id, sku, price, stock_quantity
+    FROM dbo.ProductVariants
+    WHERE variant_id = @VariantId;
+
+    SELECT movement_id, public_id, variant_id, movement_type, quantity, movement_date, order_id, notes
+    FROM dbo.InventoryMovements
+    WHERE variant_id = @VariantId
+    ORDER BY movement_date;
+END;
+GO
+
+-- Stock disponible real para vender: lo físico en depósito menos lo ya reservado en carritos
+-- (todavía sin convertirse en orden). Sin esto, dos clientes podrían "comprar" las mismas
+-- últimas unidades desde sus carritos sin que ninguno se entere hasta el checkout.
+CREATE PROCEDURE dbo.sp_GetVariantAvailableStock
+    @VariantId INT,
+    @PhysicalStock INT OUTPUT,
+    @ReservedInCarts INT OUTPUT,
+    @AvailableStock INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT @PhysicalStock = stock_quantity
+    FROM dbo.ProductVariants
+    WHERE variant_id = @VariantId;
+
+    SELECT @ReservedInCarts = ISNULL(SUM(quantity), 0)
+    FROM dbo.CartItems
+    WHERE variant_id = @VariantId;
+
+    SET @AvailableStock = @PhysicalStock - @ReservedInCarts;
 END;
 GO

@@ -9,6 +9,7 @@ public class User
 {
     [PrimaryKey]
     [Column("user_id")]
+    [NotSerialized]
     public int Id { get; set; }
 
     [Column("public_id")]
