@@ -1,7 +1,7 @@
 ﻿
 
 using DBSQLClient.Models;
-using DBSQLClient.Servicio.Conexion;
+using DBSQLClient.Conexion;
 using System.Diagnostics;
 using System.Text.Json;
 

@@ -1,4 +1,4 @@
-﻿using DBSQLClient.Servicio.Conexion;
+﻿using DBSQLClient.Conexion;
 using System.Data;
 using System.Text.Json;
 
