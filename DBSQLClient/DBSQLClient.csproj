@@ -9,7 +9,7 @@
 
   <PropertyGroup>
     <PackageId>DBSQLClient</PackageId>
-    <Version>1.0.0</Version>
+    <Version>0.1.0</Version>
     <Authors>Erick Rashon</Authors>
     <Description>Cliente ligero sobre Microsoft.Data.SqlClient para ejecutar queries y procedimientos almacenados en SQL Server, con mapeo automático a objetos, builder de parámetros (SqlParams) y manejo simplificado de parámetros de salida.</Description>
     <PackageTags>sql;sqlserver;sqlclient;ado.net;mssql;orm-lite;dapper-alternative</PackageTags>
