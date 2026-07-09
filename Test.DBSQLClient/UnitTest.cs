@@ -1,4 +1,6 @@
 ﻿using DBSQLClient.Conexion;
+using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using System.Data;
 using System.Text.Json;
 
@@ -12,7 +14,7 @@ public class UnitTest
     public class SqlClientServiceTests : IDisposable
     {
         private readonly string _connectionString;
-        private readonly SqlClientService _servicioDB;
+        private readonly SqlClientService _service;
 
         public SqlClientServiceTests()
         {
@@ -60,10 +62,10 @@ public class UnitTest
         public void SqlParameters_Constructor_DebeAsignarValores()
         {
             // Act
-            var param = new SqlParameters("Id", 123);
+            var param = new SqlParameter("Id", 123);
 
             // Assert
-            param.Name.Should().Be("Id");
+            param.ParameterName.Should().Be("Id");
             param.Value.Should().Be(123);
             param.Direction.Should().Be(ParameterDirection.Input);
         }
@@ -72,19 +74,19 @@ public class UnitTest
         public void SqlParameters_ConDbType_DebeAsignarTipo()
         {
             // Act
-            var param = new SqlParameters("Name", "Juan", SqlDbType.NVarChar);
+            var param = new SqlParameter("Name", SqlDbType.NVarChar) { Value = "Juan" };
 
             // Assert
-            param.Name.Should().Be("Name");
+            param.ParameterName.Should().Be("Name");
             param.Value.Should().Be("Juan");
-            param.DbType.Should().Be(SqlDbType.NVarChar);
+            param.SqlDbType.Should().Be(SqlDbType.NVarChar);
         }
 
         [Fact]
         public void SqlParameters_ConDireccion_DebeAsignarDireccion()
         {
             // Act
-            var param = new SqlParameters("OutputParam", null, SqlDbType.Int, ParameterDirection.Output);
+            var param = new SqlParameter("OutputParam", SqlDbType.Int) { Direction = ParameterDirection.Output };
 
             // Assert
             param.Direction.Should().Be(ParameterDirection.Output);
@@ -323,7 +325,10 @@ public class UnitTest
 
             // Assert
             json.Should().NotContain("\n"); // Sin indentación
-            json.Should().Contain("\"id\""); // camelCase
+            // ToJson(options) serializa un Dictionary<string, object?> por fila: PropertyNamingPolicy
+            // de System.Text.Json solo aplica a propiedades de POCOs, no a claves de diccionario, así
+            // que el nombre de columna original ("Id") se mantiene tal cual (no "id").
+            json.Should().Contain("\"Id\"");
         }
 
         [Fact]
@@ -528,7 +533,7 @@ public class UnitTest
             // Act
             Func<Task> act = async () => await _service.ExecuteAsync(
                 "sp_LongRunningProcedure",
-                Array.Empty<SqlParameters>(),
+                Array.Empty<SqlParameter>(),
                 cts.Token
             );
 
@@ -617,7 +622,7 @@ public class UnitTest
             var query = "SELECT * FROM Users WHERE Id = @Id";
             var parameters = new[]
             {
-                new SqlParameters("Id", 1)
+                new SqlParameter("Id", 1)
             };
 
             // Act
@@ -637,7 +642,7 @@ public class UnitTest
             var spName = "sp_GetUserById";
             var parameters = new[]
             {
-                new SqlParameters("UserId", 1)
+                new SqlParameter("UserId", 1)
             };
 
             // Act
@@ -656,7 +661,7 @@ public class UnitTest
             var timeout = 2; // 2 segundos
 
             // Act
-            Func<Task> act = async () => await _service.QueryAsync(query, null, timeout);
+            Func<Task> act = async () => await _service.QueryAsync(query, null, timeout: timeout);
 
             // Assert
             await act.Should().ThrowAsync<SqlException>()

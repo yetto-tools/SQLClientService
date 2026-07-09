@@ -42,7 +42,9 @@ jobs:
       - name: Build
         run: dotnet build DBSQLClient/DBSQLClient.csproj -c Release --no-restore
 
-      # TODO: reincorporar cuando Test.DBSQLClient compile (ver commit que quita este paso).
+      - name: Test
+        run: dotnet test Test.DBSQLClient/Test.DBSQLClient.csproj -c Release
+
       - name: Pack
         run: >
           dotnet pack DBSQLClient/DBSQLClient.csproj -c Release --no-build
