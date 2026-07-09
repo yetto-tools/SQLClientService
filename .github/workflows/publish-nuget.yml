@@ -1,0 +1,58 @@
+name: Publish NuGet package
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versión a publicar (ej. 1.0.1)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore DBSQLClient/DBSQLClient.csproj
+
+      - name: Build
+        run: dotnet build DBSQLClient/DBSQLClient.csproj -c Release --no-restore
+
+      - name: Test
+        run: dotnet test Test.DBSQLClient/Test.DBSQLClient.csproj -c Release
+
+      - name: Pack
+        run: >
+          dotnet pack DBSQLClient/DBSQLClient.csproj -c Release --no-build
+          -p:Version=${{ steps.version.outputs.version }}
+          -o ./nupkg
+
+      - name: Push to NuGet.org
+        run: >
+          dotnet nuget push "./nupkg/*.nupkg"
+          --source https://api.nuget.org/v3/index.json
+          --api-key ${{ secrets.NUGET_API_KEY }}
+          --skip-duplicate
